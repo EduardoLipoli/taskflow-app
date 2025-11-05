@@ -141,14 +141,9 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
                         await updateUserStreak();
 
 
-
-                        if (Notification.permission === 'default') {
-                            try {
-                                await Notification.requestPermission();
-                            } catch (err) {
-                                console.warn("Erro ao pedir permissão de notificação:", err);
-                            }
-                        }
+                        // Função requestNotificationPermission removida daqui
+                        // para ser acessível pelo setupUIEventListeners e 
+                        // para evitar a solicitação automática no iOS.
 
 
                         await loadInitialData();
@@ -196,6 +191,23 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
             }
         }
 
+
+        // NOVO: Função movida para o escopo global
+        async function requestNotificationPermission() {
+            try {
+                const permission = await Notification.requestPermission();
+                if (permission === 'granted') {
+                    document.getElementById('notification-permission-banner')?.classList.add('hidden');
+                    showModal("Sucesso", "Notificações ativadas! Você receberá alertas de tarefas e Pomodoro.");
+                } else {
+                    showModal("Atenção", "Permissão de notificação negada. Você não receberá alertas importantes.");
+                }
+            } catch (err) {
+                console.error("Erro ao solicitar permissão de notificação:", err);
+                showModal("Erro", "Não foi possível solicitar a permissão de notificação.");
+            }
+        }
+
         function setupUIEventListeners() {
 
             document.querySelectorAll('.nav-link').forEach(link => {
@@ -218,7 +230,10 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
             document.getElementById('btn-close-mobile-menu').addEventListener('click', closeMobileMenu);
             document.getElementById('mobile-menu-overlay').addEventListener('click', closeMobileMenu);
 
-
+            const btnRequestNotif = document.getElementById('btn-request-notification-permission');
+            if (btnRequestNotif) {
+                btnRequestNotif.addEventListener('click', requestNotificationPermission);
+            }
 
             const notifPanel = document.getElementById('notification-panel');
             const notifButton = document.getElementById('btn-toggle-notifications');
@@ -635,6 +650,12 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 
             if (pageId === 'dashboard') {
                 pomodoro.init();
+                const banner = document.getElementById('notification-permission-banner');
+                if (banner && Notification.permission === 'default') {
+                    banner.classList.remove('hidden');
+                } else if (banner) {
+                    banner.classList.add('hidden');
+                }
             }
             if (pageId === 'calendar') {
                 if (!calendar) {
@@ -3422,8 +3443,6 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
             }
 
         }
-
-
 
         function openMobileMenu() {
             const nav = document.getElementById('sidebar-nav');
