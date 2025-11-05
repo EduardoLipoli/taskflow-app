@@ -1,0 +1,1383 @@
+<!DOCTYPE html>
+<html lang="pt-BR" class="h-full">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema de Gestão Completo</title>
+    <link rel="icon" type="image/x-icon" href="/assets/checklist.ico">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src='https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.js'></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/lucide@0.378.0/dist/umd/lucide.min.js"></script>
+
+    <link rel="stylesheet" href="assets/style.css">
+</head>
+
+<body class="h-full bg-zinc-900 text-zinc-100 font-inter antialiased">
+
+    <div id="loading-screen" class="fixed inset-0 bg-zinc-900 flex items-center justify-center z-[100]">
+        <div class="flex flex-col items-center gap-4">
+            <svg class="animate-spin h-10 w-10 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none"
+                viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z">
+                </path>
+            </svg>
+            <p class="text-lg font-semibold text-zinc-300">Carregando Sistema...</p>
+        </div>
+    </div>
+
+    <div id="login-screen" class="hidden h-full flex items-center justify-center p-6">
+        <div class="w-full max-w-md bg-zinc-800 p-8 rounded-2xl shadow-2xl">
+
+            <div id="login-form">
+                <h2 class="text-3xl font-bold text-center text-white mb-6">Acessar Sistema</h2>
+                <form id="form-email-login" class="space-y-4">
+                    <div>
+                        <label for="login-email" class="block text-sm font-medium text-zinc-300 mb-1">Email</label>
+                        <input type="email" id="login-email" required
+                            class="w-full px-4 py-3 bg-zinc-700 border border-zinc-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    <div>
+                        <label for="login-password" class="block text-sm font-medium text-zinc-300 mb-1">Senha</label>
+                        <input type="password" id="login-password" required
+                            class="w-full px-4 py-3 bg-zinc-700 border border-zinc-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    <button type="submit"
+                        class="w-full py-3 px-4 bg-blue-500 hover:bg-blue-600 rounded-lg font-semibold text-white transition-colors">Entrar</button>
+                </form>
+
+                <div class="relative my-6">
+                    <div class="absolute inset-0 flex items-center">
+                        <span class="w-full border-t border-zinc-600"></span>
+                    </div>
+                    <div class="relative flex justify-center text-sm">
+                        <span class="px-2 bg-zinc-800 text-zinc-400">ou</span>
+                    </div>
+                </div>
+
+                <button id="btn-google-login"
+                    class="w-full py-3 px-4 bg-zinc-700 hover:bg-zinc-600 rounded-lg font-medium text-white transition-colors flex items-center justify-center gap-2">
+                    <svg class="w-5 h-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
+                        <path fill="#FFC107"
+                            d="M43.611 20.083H42V20H24v8h11.303c-1.649 4.657-6.08 8-11.303 8c-6.627 0-12-5.373-12-12s5.373-12 12-12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4C12.955 4 4 12.955 4 24s8.955 20 20 20s20-8.955 20-20c0-1.341-.138-2.65-.389-3.917z" />
+                        <path fill="#FF3D00"
+                            d="m6.306 14.691l6.571 4.819C14.655 15.108 18.961 12 24 12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4C16.318 4 9.656 8.337 6.306 14.691z" />
+                        <path fill="#4CAF50"
+                            d="m24 44c5.166 0 9.86-1.977 13.409-5.192l-6.19-5.238C29.211 35.091 26.715 36 24 36c-5.202 0-9.619-3.317-11.283-7.946l-6.522 5.025C9.505 39.556 16.227 44 24 44z" />
+                        <path fill="#1976D2"
+                            d="M43.611 20.083H42V20H24v8h11.303c-.792 2.237-2.231 4.166-4.087 5.571l6.19 5.238C42.012 36.49 44 30.861 44 24c0-1.341-.138-2.65-.389-3.917z" />
+                    </svg>
+                    Continuar com Google
+                </button>
+
+                <p class="text-center text-sm text-zinc-400 mt-6">
+                    Não tem uma conta?
+                    <button id="btn-show-signup"
+                        class="font-medium text-blue-500 hover:text-blue-400">Cadastre-se</button>
+                </p>
+            </div>
+
+            <div id="signup-form" class="hidden">
+                <h2 class="text-3xl font-bold text-center text-white mb-6">Criar Conta</h2>
+                <form id="form-email-signup" class="space-y-4">
+                    <div>
+                        <label for="signup-email" class="block text-sm font-medium text-zinc-300 mb-1">Email</label>
+                        <input type="email" id="signup-email" required
+                            class="w-full px-4 py-3 bg-zinc-700 border border-zinc-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    <div>
+                        <label for="signup-password" class="block text-sm font-medium text-zinc-300 mb-1">Senha</label>
+                        <input type="password" id="signup-password" required
+                            class="w-full px-4 py-3 bg-zinc-700 border border-zinc-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    <button type="submit"
+                        class="w-full py-3 px-4 bg-blue-500 hover:bg-blue-600 rounded-lg font-semibold text-white transition-colors">Criar
+                        Conta</button>
+                </form>
+
+                <p class="text-center text-sm text-zinc-400 mt-6">
+                    Já tem uma conta?
+                    <button id="btn-show-login" class="font-medium text-blue-500 hover:text-blue-400">Faça
+                        login</button>
+                </p>
+            </div>
+
+        </div>
+    </div>
+
+    <div id="app-wrapper" class="h-full flex relative overflow-x-hidden">
+
+        <nav id="sidebar-nav"
+            class="w-64 h-full bg-zinc-800 flex flex-col p-4 shadow-lg fixed md:relative z-20 -translate-x-full md:translate-x-0 transition-transform duration-300 ease-in-out">
+            <div class="flex items-center gap-3 px-2 mb-6">
+                <div class="w-10 h-10 bg-blue-500 rounded-lg flex items-center justify-center">
+                    <i data-lucide="layout-dashboard" class="w-6 h-6 text-white"></i>
+                </div>
+                <h1 class="text-2xl font-bold text-white">TaskFlow</h1>
+            </div>
+
+            <button id="btn-close-mobile-menu" class="absolute top-4 right-4 text-zinc-400 hover:text-white md:hidden">
+                <i data-lucide="x" class="w-6 h-6"></i>
+            </button>
+
+            <div
+                class="flex items-center justify-center gap-2 mb-6 px-2 py-3 bg-zinc-700/50 rounded-lg streak-container">
+                <i data-lucide="flame" class="w-6 h-6 text-orange-400 streak-flame" id="streak-flame"></i>
+                <span id="streak-counter" class="text-2xl font-bold text-white streak-number">0</span>
+                <span class="text-sm text-zinc-300">dias de ofensiva</span>
+            </div>
+
+            <div class="relative px-2 mb-4"> <button id="btn-toggle-notifications"
+                    class="relative flex items-center gap-3 w-full px-3 py-2 rounded-md font-medium text-zinc-300 hover:bg-zinc-700 hover:text-white transition-colors">
+                    <i data-lucide="bell" class="w-5 h-5"></i>
+                    <span>Notificações</span>
+                    <span id="notification-dot"
+                        class="hidden absolute top-1 left-7 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-zinc-800"></span>
+                </button>
+
+                <div id="notification-panel"
+                    class="hidden absolute bottom-full left-0 mb-2 w-72 bg-zinc-700 rounded-lg shadow-xl border border-zinc-600 z-50">
+                    <div class="p-3 border-b border-zinc-600 flex justify-between items-center">
+                        <h4 class="font-semibold text-white">Notificações</h4>
+                        <button id="btn-mark-all-read"
+                            class="text-xs text-blue-400 hover:text-blue-300 font-medium">Marcar como lidas</button>
+                    </div>
+                    <div id="notification-list" class="p-2 max-h-64 overflow-y-auto">
+                        <div id="notification-loading" class="p-4 text-center text-sm text-zinc-400">
+                            <div class="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-500 mx-auto"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+
+            <span class="text-xs font-semibold text-zinc-500 px-2 mb-2 uppercase">Menu Principal</span>
+            <ul class="flex flex-col gap-1">
+                <li><button data-page="dashboard"
+                        class="nav-link flex items-center gap-3 w-full px-3 py-2 rounded-md font-medium text-zinc-300 hover:bg-zinc-700 hover:text-white transition-colors"><i
+                            data-lucide="home" class="w-5 h-5"></i> Dashboard</button></li>
+                <li><button data-page="tasks"
+                        class="nav-link flex items-center gap-3 w-full px-3 py-2 rounded-md font-medium text-zinc-300 hover:bg-zinc-700 hover:text-white transition-colors"><i
+                            data-lucide="check-square" class="w-5 h-5"></i> Minhas Tarefas</button></li>
+                <li><button data-page="agency"
+                        class="nav-link flex items-center gap-3 w-full px-3 py-2 rounded-md font-medium text-zinc-300 hover:bg-zinc-700 hover:text-white transition-colors"><i
+                            data-lucide="briefcase" class="w-5 h-5"></i> Agência (CRM)</button></li>
+                <li><button data-page="college"
+                        class="nav-link flex items-center gap-3 w-full px-3 py-2 rounded-md font-medium text-zinc-300 hover:bg-zinc-700 hover:text-white transition-colors"><i
+                            data-lucide="graduation-cap" class="w-5 h-5"></i> Faculdade</button></li>
+                <li><button data-page="calendar"
+                        class="nav-link flex items-center gap-3 w-full px-3 py-2 rounded-md font-medium text-zinc-300 hover:bg-zinc-700 hover:text-white transition-colors"><i
+                            data-lucide="calendar" class="w-5 h-5"></i> Calendário</button></li>
+            </ul>
+
+            <div class="mt-auto">
+                <div class="border-t border-zinc-700 pt-4 px-2">
+                    <p class="text-xs text-zinc-500 mb-1">Logado como:</p>
+                    <p id="user-email-display" class="text-sm font-medium text-zinc-300 truncate" title="user-email">
+                    </p>
+                    <button id="btn-logout"
+                        class="mt-2 w-full flex items-center justify-center gap-2 px-4 py-3 text-sm font-medium text-red-500 hover:text-red-600 border border-red-500 hover:border-red-700 rounded-lg transition-all duration-300 group">
+                        <i data-lucide="log-out"
+                            class="w-4 h-4 transition-transform duration-300 group-hover:translate-x-1"></i>
+                        Sair
+                    </button>
+                    <p class="text-xs text-zinc-600 mt-2 break-words" id="user-id-display"></p>
+                </div>
+            </div>
+        </nav>
+
+        <main class="flex-1 h-full overflow-y-auto pt-20 px-6 pb-6 md:p-10">
+
+            <button id="btn-open-mobile-menu"
+                class="md:hidden fixed top-6 left-6 z-10 p-2 bg-zinc-800 rounded-md text-white">
+                <i data-lucide="menu" class="w-6 h-6"></i>
+            </button>
+
+            <div id="mobile-menu-overlay" class="hidden md:hidden fixed inset-0 bg-black/50 z-10"></div>
+
+            <div id="page-dashboard" class="hidden p-6 bg-zinc-900 min-h-screen">
+                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-4">
+                    <div>
+                        <h2 class="text-3xl font-bold text-white">Dashboard de Produtividade</h2>
+                        <p class="text-zinc-400 mt-1">Acompanhe seu progresso e mantenha o foco</p>
+                    </div>
+                    <div class="flex items-center gap-4">
+                        <span id="current-date" class="bg-zinc-800 px-4 py-2 rounded-lg text-zinc-300 text-sm"></span>
+                        <button id="btn-toggle-focus-mode" title="Modo Foco Total"
+                            class="bg-zinc-800 hover:bg-zinc-700 p-2 rounded-lg transition-colors text-zinc-300 hover:text-white">
+                            <i data-lucide="maximize" class="w-5 h-5"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                    <div
+                        class="bg-gradient-to-br from-zinc-800 to-zinc-700 p-6 rounded-xl shadow-lg border border-zinc-600 hover:border-zinc-500 transition-all duration-300">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-zinc-400 text-sm font-medium mb-1">Total de Tarefas</p>
+                                <p id="stats-total" class="text-3xl font-bold text-white">0</p>
+                            </div>
+                            <div class="bg-blue-500/20 p-3 rounded-lg">
+                                <i data-lucide="clipboard-list" class="w-6 h-6 text-blue-400"></i>
+                            </div>
+                        </div>
+                        <div class="mt-4 pt-3 border-t border-zinc-600">
+                            <p class="text-zinc-500 text-xs">Todas as tarefas criadas</p>
+                        </div>
+                    </div>
+
+                    <div
+                        class="bg-gradient-to-br from-zinc-800 to-zinc-700 p-6 rounded-xl shadow-lg border border-zinc-600 hover:border-zinc-500 transition-all duration-300">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-zinc-400 text-sm font-medium mb-1">Pendentes</p>
+                                <p id="stats-pending" class="text-3xl font-bold text-blue-400">0</p>
+                            </div>
+                            <div class="bg-blue-500/20 p-3 rounded-lg">
+                                <i data-lucide="clock" class="w-6 h-6 text-blue-400"></i>
+                            </div>
+                        </div>
+                        <div class="mt-4 pt-3 border-t border-zinc-600">
+                            <p class="text-zinc-500 text-xs">Aguardando início</p>
+                        </div>
+                    </div>
+
+                    <div
+                        class="bg-gradient-to-br from-zinc-800 to-zinc-700 p-6 rounded-xl shadow-lg border border-zinc-600 hover:border-zinc-500 transition-all duration-300">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-zinc-400 text-sm font-medium mb-1">Em Progresso</p>
+                                <p id="stats-doing" class="text-3xl font-bold text-yellow-400">0</p>
+                            </div>
+                            <div class="bg-yellow-500/20 p-3 rounded-lg">
+                                <i data-lucide="play-circle" class="w-6 h-6 text-yellow-400"></i>
+                            </div>
+                        </div>
+                        <div class="mt-4 pt-3 border-t border-zinc-600">
+                            <p class="text-zinc-500 text-xs">Em andamento</p>
+                        </div>
+                    </div>
+
+                    <div
+                        class="bg-gradient-to-br from-zinc-800 to-zinc-700 p-6 rounded-xl shadow-lg border border-zinc-600 hover:border-zinc-500 transition-all duration-300">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-zinc-400 text-sm font-medium mb-1">Concluídas</p>
+                                <p id="stats-done" class="text-3xl font-bold text-green-400">0</p>
+                            </div>
+                            <div class="bg-green-500/20 p-3 rounded-lg">
+                                <i data-lucide="check-circle" class="w-6 h-6 text-green-400"></i>
+                            </div>
+                        </div>
+                        <div class="mt-4 pt-3 border-t border-zinc-600">
+                            <p class="text-zinc-500 text-xs">Finalizadas com sucesso</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 xl:grid-cols-3 gap-8">
+                    <div class="xl:col-span-1">
+                        <div class="bg-zinc-800 rounded-2xl shadow-xl border border-zinc-700 overflow-hidden h-full">
+                            <div class="bg-gradient-to-r from-blue-600 to-blue-800 p-6">
+                                <h3 class="text-xl font-bold text-white text-center">Timer Pomodoro</h3>
+                                <p class="text-blue-200 text-sm text-center mt-1">Gerencie seus ciclos de foco</p>
+                            </div>
+
+                            <div class="p-6">
+                                <div class="flex bg-zinc-700 rounded-lg p-1 mb-6">
+                                    <button id="pomodoro-mode-focus"
+                                        class="flex-1 py-3 px-4 text-sm rounded-md font-semibold bg-blue-500 text-white transition-all hover:bg-blue-600">
+                                        Foco
+                                    </button>
+                                    <button id="pomodoro-mode-short"
+                                        class="flex-1 py-3 px-4 text-sm rounded-md font-semibold text-zinc-300 hover:bg-zinc-600 transition-all">
+                                        Pausa Curta
+                                    </button>
+                                    <button id="pomodoro-mode-long"
+                                        class="flex-1 py-3 px-4 text-sm rounded-md font-semibold text-zinc-300 hover:bg-zinc-600 transition-all">
+                                        Pausa Longa
+                                    </button>
+                                </div>
+
+                                <div class="relative flex justify-center items-center my-8">
+                                    <div
+                                        class="relative w-48 h-48 rounded-full bg-gradient-to-br from-blue-900 to-blue-700 shadow-lg border-4 border-blue-600 flex items-center justify-center">
+                                        <div id="pomodoro-time" class="text-4xl font-bold text-white">25:00</div>
+                                    </div>
+                                </div>
+
+                                <div class="flex justify-center gap-3 mb-6">
+                                    <button id="pomodoro-start"
+                                        class="flex-1 py-3 px-4 bg-blue-500 hover:bg-blue-600 rounded-lg text-md font-semibold uppercase transition-colors flex items-center justify-center gap-2">
+                                        <i data-lucide="play" class="w-5 h-5"></i>
+                                        Iniciar
+                                    </button>
+                                    <button id="pomodoro-reset"
+                                        class="flex-1 py-3 px-4 bg-zinc-700 hover:bg-zinc-600 rounded-lg text-md font-semibold uppercase transition-colors flex items-center justify-center gap-2">
+                                        <i data-lucide="rotate-ccw" class="w-5 h-5"></i>
+                                        Resetar
+                                    </button>
+                                </div>
+
+                                <div class="bg-zinc-700/50 rounded-xl p-4 border border-zinc-600">
+                                    <label for="pomodoro-task-select"
+                                        class="block text-sm font-medium text-zinc-300 mb-2">
+                                        <i data-lucide="target" class="w-4 h-4 inline mr-1"></i>
+                                        Registrar foco para:
+                                    </label>
+                                    <select id="pomodoro-task-select"
+                                        class="w-full px-4 py-3 bg-zinc-800 border border-zinc-600 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-white">
+                                        <option value="">Nenhuma tarefa selecionada</option>
+                                    </select>
+                                    <p class="text-xs text-zinc-400 mt-2 flex items-center gap-1">
+                                        <i data-lucide="info" class="w-3 h-3"></i>
+                                        O tempo será salvo ao completar um ciclo de foco
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="xl:col-span-2 space-y-8">
+                        <div class="bg-zinc-800 rounded-2xl shadow-xl border border-zinc-700 overflow-hidden">
+                            <div class="bg-gradient-to-r from-zinc-700 to-zinc-800 p-6">
+                                <div class="flex justify-between items-center">
+                                    <h3 class="text-xl font-bold text-white flex items-center gap-2">
+                                        <i data-lucide="list-checks" class="w-5 h-5"></i>
+                                        Tarefas Recentes
+                                    </h3>
+                                </div>
+                            </div>
+                            <div class="p-6">
+                                <div id="recent-tasks-list" class="space-y-3">
+                                    <div class="text-center py-8 text-zinc-500">
+                                        <i data-lucide="inbox" class="w-12 h-12 mx-auto mb-3 opacity-50"></i>
+                                        <p>Nenhuma tarefa recente</p>
+                                        <p class="text-sm mt-1">Crie uma nova tarefa para começar</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                            <div class="bg-zinc-800 rounded-2xl shadow-xl border border-zinc-700 overflow-hidden">
+                                <div class="bg-gradient-to-r from-zinc-700 to-zinc-800 p-6">
+                                    <div class="flex justify-between items-center">
+                                        <h3 class="text-xl font-bold text-white flex items-center gap-2">
+                                            <i data-lucide="history" class="w-5 h-5"></i>
+                                            Histórico de Foco
+                                        </h3>
+                                    </div>
+                                </div>
+                                <div class="p-6">
+                                    <div id="focus-history-list" class="space-y-3 max-h-60 overflow-auto">
+                                        <div class="text-center py-6 text-zinc-500">
+                                            <i data-lucide="clock" class="w-10 h-10 mx-auto mb-2 opacity-50"></i>
+                                            <p class="text-sm">Nenhum ciclo de foco registrado</p>
+                                            <p class="text-xs mt-1">Use o timer para começar</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="bg-zinc-800 rounded-2xl shadow-xl border border-zinc-700 overflow-hidden">
+                                <div class="bg-gradient-to-r from-zinc-700 to-zinc-800 p-6">
+                                    <h3 class="text-xl font-bold text-white flex items-center gap-2">
+                                        <i data-lucide="folder" class="w-5 h-5"></i>
+                                        Tarefas por Categoria
+                                    </h3>
+                                </div>
+                                <div class="p-6">
+                                    <div id="category-tasks-list" class="space-y-3">
+                                        <div class="text-center py-6 text-zinc-500">
+                                            <i data-lucide="folder-open" class="w-10 h-10 mx-auto mb-2 opacity-50"></i>
+                                            <p class="text-sm">Nenhuma tarefa para exibir</p>
+                                            <p class="text-xs mt-1">Organize suas tarefas em categorias</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="mt-8">
+                    <div class="bg-zinc-800 rounded-2xl shadow-xl border border-zinc-700 overflow-hidden">
+                        <div class="bg-gradient-to-r from-zinc-700 to-zinc-800 p-6 border-b border-zinc-600">
+                            <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+                                <h3 class="text-xl font-bold text-white flex items-center gap-2">
+                                    <i data-lucide="calendar" class="w-5 h-5 text-green-400"></i>
+                                    Cronograma de Horários
+                                </h3>
+                            </div>
+                        </div>
+
+                        <div class="overflow-x-auto">
+                            <table class="w-full">
+                                <thead class="bg-zinc-700/50">
+                                    <tr>
+                                        <th
+                                            class="w-1/6 p-4 text-left text-sm font-semibold text-zinc-300 whitespace-nowrap">
+                                            <div class="flex items-center gap-2">
+                                                <i data-lucide="clock" class="w-4 h-4"></i>
+                                                Horário
+                                            </div>
+                                        </th>
+                                        <th
+                                            class="w-1/6 p-4 text-left text-sm font-semibold text-zinc-300 whitespace-nowrap">
+                                            <div class="flex items-center gap-2">
+                                                <i data-lucide="calendar" class="w-4 h-4"></i>
+                                                Segunda
+                                            </div>
+                                        </th>
+                                        <th
+                                            class="w-1/6 p-4 text-left text-sm font-semibold text-zinc-300 whitespace-nowrap">
+                                            <div class="flex items-center gap-2">
+                                                <i data-lucide="calendar" class="w-4 h-4"></i>
+                                                Terça
+                                            </div>
+                                        </th>
+                                        <th
+                                            class="w-1/6 p-4 text-left text-sm font-semibold text-zinc-300 whitespace-nowrap">
+                                            <div class="flex items-center gap-2">
+                                                <i data-lucide="calendar" class="w-4 h-4"></i>
+                                                Quarta
+                                            </div>
+                                        </th>
+                                        <th
+                                            class="w-1/6 p-4 text-left text-sm font-semibold text-zinc-300 whitespace-nowrap">
+                                            <div class="flex items-center gap-2">
+                                                <i data-lucide="calendar" class="w-4 h-4"></i>
+                                                Quinta
+                                            </div>
+                                        </th>
+                                        <th
+                                            class="w-1/6 p-4 text-left text-sm font-semibold text-zinc-300 whitespace-nowrap">
+                                            <div class="flex items-center gap-2">
+                                                <i data-lucide="calendar" class="w-4 h-4"></i>
+                                                Sexta
+                                            </div>
+                                        </th>
+                                    </tr>
+                                </thead>
+                                <tbody id="dashboard-schedule-body" class="divide-y divide-zinc-700/50">
+                                    <tr>
+                                        <td colspan="6" class="p-8 text-center">
+                                            <div class="flex flex-col items-center justify-center gap-3">
+                                                <div
+                                                    class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500">
+                                                </div>
+                                                <p class="text-zinc-400">Carregando cronograma...</p>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="page-tasks" class="hidden p-6 bg-zinc-900 min-h-screen">
+
+                <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-8 gap-4">
+                    <div>
+                        <h2 class="text-3xl font-bold text-white">Minhas Tarefas</h2>
+                        <p class="text-zinc-400 mt-1">Organize e acompanhe seu progresso</p>
+                    </div>
+                    <div class="flex items-center gap-4">
+                        <button id="btn-show-add-task-modal"
+                            class="py-3 px-6 bg-blue-500 hover:bg-blue-600 rounded-lg font-semibold transition-all duration-300 flex items-center justify-center gap-2 group">
+                            <i data-lucide="plus" class="w-5 h-5 group-hover:scale-110 transition-transform"></i>
+                            Nova Tarefa
+                        </button>
+                    </div>
+                </div>
+
+
+                <div class="grid grid-cols-1 xl:grid-cols-4 gap-6">
+
+                    <div class="bg-zinc-800 rounded-2xl shadow-xl border border-zinc-700 overflow-hidden">
+                        <div class="bg-gradient-to-r from-red-900/50 to-red-800/30 p-4 border-b border-red-800/30">
+                            <div class="flex items-center justify-between">
+                                <h3 class="text-lg font-semibold text-white flex items-center gap-2">
+                                    <i data-lucide="alert-triangle" class="w-5 h-5 text-red-400"></i>
+                                    Atrasadas
+                                </h3>
+                            </div>
+                            <p class="text-red-300 text-xs mt-1">Tarefas com prazo vencido</p>
+                        </div>
+                        <div id="kanban-overdue" class="p-2 min-h-60 space-y-3">
+                            <div class="text-center py-8 text-zinc-500">
+                                <i data-lucide="check-circle" class="w-8 h-8 mx-auto mb-2 opacity-50"></i>
+                                <p class="text-sm">Nenhuma tarefa atrasada</p>
+                            </div>
+                        </div>
+                    </div>
+
+
+                    <div class="bg-zinc-800 rounded-2xl shadow-xl border border-zinc-700 overflow-hidden">
+                        <div class="bg-gradient-to-r from-blue-900/50 to-blue-800/30 p-4 border-b border-blue-800/30">
+                            <div class="flex items-center justify-between">
+                                <h3 class="text-lg font-semibold text-white flex items-center gap-2">
+                                    <i data-lucide="list" class="w-5 h-5 text-blue-400"></i>
+                                    A Fazer
+                                </h3>
+                            </div>
+                            <p class="text-blue-300 text-xs mt-1">Tarefas para iniciar</p>
+                        </div>
+                        <div id="kanban-todo" class="p-2 min-h-60 space-y-3">
+                            <div class="text-center py-8 text-zinc-500">
+                                <i data-lucide="plus-circle" class="w-8 h-8 mx-auto mb-2 opacity-50"></i>
+                                <p class="text-sm">Nenhuma tarefa pendente</p>
+                            </div>
+                        </div>
+                    </div>
+
+
+                    <div class="bg-zinc-800 rounded-2xl shadow-xl border border-zinc-700 overflow-hidden">
+                        <div
+                            class="bg-gradient-to-r from-yellow-900/50 to-yellow-800/30 p-4 border-b border-yellow-800/30">
+                            <div class="flex items-center justify-between">
+                                <h3 class="text-lg font-semibold text-white flex items-center gap-2">
+                                    <i data-lucide="play-circle" class="w-5 h-5 text-yellow-400"></i>
+                                    Em Progresso
+                                </h3>
+                            </div>
+                            <p class="text-yellow-300 text-xs mt-1">Tarefas em andamento</p>
+                        </div>
+                        <div id="kanban-doing" class="p-2 min-h-60 space-y-3">
+                            <div class="text-center py-8 text-zinc-500">
+                                <i data-lucide="play" class="w-8 h-8 mx-auto mb-2 opacity-50"></i>
+                                <p class="text-sm">Nenhuma tarefa em progresso</p>
+                            </div>
+                        </div>
+                    </div>
+
+
+                    <div class="bg-zinc-800 rounded-2xl shadow-xl border border-zinc-700 overflow-hidden">
+                        <div
+                            class="bg-gradient-to-r from-green-900/50 to-green-800/30 p-4 border-b border-green-800/30">
+                            <div class="flex items-center justify-between">
+                                <h3 class="text-lg font-semibold text-white flex items-center gap-2">
+                                    <i data-lucide="check-circle-2" class="w-5 h-5 text-green-400"></i>
+                                    Concluído
+                                </h3>
+                            </div>
+                            <p class="text-green-300 text-xs mt-1">Tarefas finalizadas</p>
+                        </div>
+                        <div id="kanban-done" class="p-2 min-h-60 space-y-3">
+                            <div class="text-center py-8 text-zinc-500">
+                                <i data-lucide="award" class="w-8 h-8 mx-auto mb-2 opacity-50"></i>
+                                <p class="text-sm">Nenhuma tarefa concluída</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="page-agency" class="hidden p-6 bg-zinc-900 min-h-screen">
+
+                <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-8 gap-4">
+                    <div>
+                        <h2 class="text-3xl font-bold text-white">Gestão da Agência</h2>
+                        <p class="text-zinc-400 mt-1">Gerencie seus projetos e clientes</p>
+                    </div>
+                    <div class="flex items-center gap-4">
+                        <button id="btn-show-add-project-modal"
+                            class="py-3 px-6 bg-blue-500 hover:bg-blue-600 rounded-lg font-semibold transition-all duration-300 flex items-center justify-center gap-2 group">
+                            <i data-lucide="plus" class="w-5 h-5 group-hover:scale-110 transition-transform"></i>
+                            Novo Projeto
+                        </button>
+                    </div>
+                </div>
+
+
+                <div class="bg-zinc-800 rounded-2xl shadow-xl border border-zinc-700 overflow-hidden">
+                    <div class="bg-gradient-to-r from-zinc-700 to-zinc-800 p-6 border-b border-zinc-600">
+                        <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+                            <h3 class="text-xl font-bold text-white flex items-center gap-2">
+                                <i data-lucide="folder-open" class="w-6 h-6 text-blue-400"></i>
+                                Projetos Ativos
+                            </h3>
+                            <div class="flex items-center gap-3 text-sm">
+                                <span class="text-zinc-400">Ordenar por:</span>
+                                <select id="agency-sort-select"
+                                    class="bg-zinc-700 border border-zinc-600 rounded-lg px-3 py-1 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                    <option value="createdAt">Data de criação</option>
+                                    <option value="dueDate">Prazo</option>
+                                    <option value="title">Nome do projeto</option>
+                                    <option value="status">Status</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="overflow-x-auto">
+                        <table class="w-full">
+                            <thead class="bg-zinc-700/50">
+                                <tr>
+                                    <th class="p-4 text-left text-sm font-semibold text-zinc-300 whitespace-nowrap">
+                                        <div class="flex items-center gap-2">
+                                            <i data-lucide="folder" class="w-4 h-4"></i>
+                                            Projeto
+                                        </div>
+                                    </th>
+                                    <th class="p-4 text-left text-sm font-semibold text-zinc-300 whitespace-nowrap">
+                                        <div class="flex items-center gap-2">
+                                            <i data-lucide="user" class="w-4 h-4"></i>
+                                            Cliente
+                                        </div>
+                                    </th>
+                                    <th class="p-4 text-left text-sm font-semibold text-zinc-300 whitespace-nowrap">
+                                        <div class="flex items-center gap-2">
+                                            <i data-lucide="calendar" class="w-4 h-4"></i>
+                                            Prazo
+                                        </div>
+                                    </th>
+                                    <th class="p-4 text-left text-sm font-semibold text-zinc-300 whitespace-nowrap">
+                                        <div class="flex items-center gap-2">
+                                            <i data-lucide="activity" class="w-4 h-4"></i>
+                                            Status
+                                        </div>
+                                    </th>
+                                    <th class="p-4 text-left text-sm font-semibold text-zinc-300 whitespace-nowrap">
+                                        <div class="flex items-center gap-2">
+                                            <i data-lucide="trending-up" class="w-4 h-4"></i>
+                                            Progresso
+                                        </div>
+                                    </th>
+                                    <th class="p-4 text-right text-sm font-semibold text-zinc-300 whitespace-nowrap">
+                                        Ações</th>
+                                </tr>
+                            </thead>
+                            <tbody id="agency-table-body" class="divide-y divide-zinc-700/50">
+
+                                <tr>
+                                    <td colspan="6" class="p-8 text-center">
+                                        <div class="flex flex-col items-center justify-center gap-3">
+                                            <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500">
+                                            </div>
+                                            <p class="text-zinc-400">Carregando projetos...</p>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+
+                    <div class="bg-zinc-700/30 p-4 border-t border-zinc-600">
+                        <div class="bg-zinc-700/30 p-4 border-t border-zinc-600">
+                            <div class="flex flex-col lg:flex-row justify-between items-center gap-4 text-sm">
+                                <div class="text-zinc-400" id="agency-pagination-info">
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <button id="btn-agency-prev"
+                                        class="p-2 rounded-lg bg-zinc-700 hover:bg-zinc-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                                        <i data-lucide="chevron-left" class="w-4 h-4"></i>
+                                    </button>
+                                    <span id="agency-page-num"
+                                        class="px-3 py-1 bg-blue-500 text-white rounded-lg">1</span>
+                                    <button id="btn-agency-next"
+                                        class="p-2 rounded-lg bg-zinc-700 hover:bg-zinc-600 transition-colors">
+                                        <i data-lucide="chevron-right" class="w-4 h-4"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="page-project-detail" class="hidden">
+                <div class="flex flex-wrap justify-between items-center gap-4 mb-6">
+                    <div>
+                        <button id="btn-back-to-agency"
+                            class="flex items-center gap-2 text-sm text-blue-400 hover:text-blue-300 mb-2">
+                            <i data-lucide="arrow-left" class="w-4 h-4"></i>
+                            Voltar para todos os projetos
+                        </button>
+                        <h2 id="project-detail-title" class="text-3xl font-bold">Nome do Projeto</h2>
+                        <p id="project-detail-client" class="text-lg text-zinc-400">Nome do Cliente</p>
+                    </div>
+                    <div>
+                        <button id="btn-show-add-project-task-modal"
+                            class="py-2 px-4 bg-blue-500 hover:bg-blue-600 rounded-md font-semibold transition-colors flex items-center justify-center gap-2">
+                            <i data-lucide="plus" class="w-5 h-5"></i> Adicionar Tarefa
+                        </button>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div class="bg-zinc-800 p-4 rounded-lg shadow-lg">
+                        <h3 class="text-xl font-semibold mb-4 flex items-center gap-2"><i data-lucide="list"
+                                class="w-5 h-5 text-blue-500"></i> A Fazer</h3>
+                        <div id="project-kanban-todo" class="min-h-60 space-y-3">
+                        </div>
+                    </div>
+                    <div class="bg-zinc-800 p-4 rounded-lg shadow-lg">
+                        <h3 class="text-xl font-semibold mb-4 flex items-center gap-2"><i data-lucide="loader-circle"
+                                class="w-5 h-5 text-yellow-500"></i> Em Progresso</h3>
+                        <div id="project-kanban-doing" class="min-h-60 space-y-3">
+                        </div>
+                    </div>
+                    <div class="bg-zinc-800 p-4 rounded-lg shadow-lg">
+                        <h3 class="text-xl font-semibold mb-4 flex items-center gap-2"><i data-lucide="check-circle-2"
+                                class="w-5 h-5 text-green-500"></i> Concluído</h3>
+                        <div id="project-kanban-done" class="min-h-60 space-y-3">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="page-college" class="hidden p-6 bg-zinc-900 min-h-screen">
+
+                <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-8 gap-4">
+                    <div>
+                        <h2 class="text-3xl font-bold text-white">Faculdade</h2>
+                        <p class="text-zinc-400 mt-1">Gerencie suas disciplinas e horários</p>
+                    </div>
+                </div>
+
+
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+                    <div
+                        class="bg-gradient-to-br from-zinc-800 to-zinc-700 p-6 rounded-xl shadow-lg border border-zinc-600 hover:border-zinc-500 transition-all duration-300">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-zinc-400 text-sm font-medium mb-1">Disciplinas</p>
+                                <p class="text-3xl font-bold text-white" id="total-subjects">0</p>
+                            </div>
+                            <div class="bg-blue-500/20 p-3 rounded-lg">
+                                <i data-lucide="book-open" class="w-6 h-6 text-blue-400"></i>
+                            </div>
+                        </div>
+                        <div class="mt-4 pt-3 border-t border-zinc-600">
+                            <p class="text-zinc-500 text-xs">Matriculadas neste semestre</p>
+                        </div>
+                    </div>
+
+                    <div
+                        class="bg-gradient-to-br from-zinc-800 to-zinc-700 p-6 rounded-xl shadow-lg border border-zinc-600 hover:border-zinc-500 transition-all duration-300">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-zinc-400 text-sm font-medium mb-1">Aulas Hoje</p>
+                                <p class="text-3xl font-bold text-yellow-400" id="today-classes">0</p>
+                            </div>
+                            <div class="bg-yellow-500/20 p-3 rounded-lg">
+                                <i data-lucide="calendar" class="w-6 h-6 text-yellow-400"></i>
+                            </div>
+                        </div>
+                        <div class="mt-4 pt-3 border-t border-zinc-600">
+                            <p class="text-zinc-500 text-xs">Próximas aulas do dia</p>
+                        </div>
+                    </div>
+
+                    <div
+                        class="bg-gradient-to-br from-zinc-800 to-zinc-700 p-6 rounded-xl shadow-lg border border-zinc-600 hover:border-zinc-500 transition-all duration-300">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-zinc-400 text-sm font-medium mb-1">Trabalhos</p>
+                                <p class="text-3xl font-bold text-orange-400" id="pending-works">0</p>
+                            </div>
+                            <div class="bg-orange-500/20 p-3 rounded-lg">
+                                <i data-lucide="clipboard-list" class="w-6 h-6 text-orange-400"></i>
+                            </div>
+                        </div>
+                        <div class="mt-4 pt-3 border-t border-zinc-600">
+                            <p class="text-zinc-500 text-xs">Pendentes para entregar</p>
+                        </div>
+                    </div>
+
+                    <div
+                        class="bg-gradient-to-br from-zinc-800 to-zinc-700 p-6 rounded-xl shadow-lg border border-zinc-600 hover:border-zinc-500 transition-all duration-300">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-zinc-400 text-sm font-medium mb-1">Frequência</p>
+                                <p class="text-3xl font-bold text-green-400" id="attendance-rate">0%</p>
+                            </div>
+                            <div class="bg-green-500/20 p-3 rounded-lg">
+                                <i data-lucide="trending-up" class="w-6 h-6 text-green-400"></i>
+                            </div>
+                        </div>
+                        <div class="mt-4 pt-3 border-t border-zinc-600">
+                            <p class="text-zinc-500 text-xs">Média de presença</p>
+                        </div>
+                    </div>
+                </div>
+
+
+                <div class="mb-8">
+                    <div class="bg-zinc-800 rounded-2xl shadow-xl border border-zinc-700 overflow-hidden">
+                        <div class="bg-gradient-to-r from-zinc-700 to-zinc-800 p-6 border-b border-zinc-600">
+                            <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+                                <h3 class="text-xl font-bold text-white flex items-center gap-2">
+                                    <i data-lucide="book-open" class="w-5 h-5 text-blue-400"></i>
+                                    Minhas Disciplinas
+                                </h3>
+                                <form id="form-add-subject" class="flex gap-3">
+                                    <div class="relative">
+                                        <i data-lucide="book"
+                                            class="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-zinc-400"></i>
+                                        <input type="text" name="subjectName" required
+                                            class="pl-10 pr-4 py-3 bg-zinc-700 border border-zinc-600 rounded-lg text-white placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-64"
+                                            placeholder="Nome da disciplina...">
+                                    </div>
+                                    <button type="submit"
+                                        class="py-3 px-6 bg-blue-500 hover:bg-blue-600 rounded-lg font-semibold transition-all duration-300 flex items-center justify-center gap-2 group">
+                                        <i data-lucide="plus"
+                                            class="w-5 h-5 group-hover:scale-110 transition-transform"></i>
+                                        Adicionar
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+                        <div class="p-6">
+                            <div id="college-subjects-list"
+                                class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+
+                                <div class="col-span-full text-center py-8">
+                                    <div class="flex flex-col items-center justify-center gap-3">
+                                        <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+                                        <p class="text-zinc-400">Carregando disciplinas...</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+
+                <template id="subject-card-template">
+                    <div
+                        class="bg-zinc-700/50 rounded-xl p-5 border border-zinc-600 hover:border-zinc-500 transition-all duration-300 group">
+                        <div class="flex justify-between items-start mb-4">
+                            <div class="flex-1">
+                                <h4
+                                    class="font-semibold text-white text-lg group-hover:text-blue-300 transition-colors">
+                                    Nome da Disciplina</h4>
+                                <p class="text-zinc-400 text-sm mt-1">Código: MAT123</p>
+                            </div>
+                            <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button class="p-2 hover:bg-zinc-600 rounded-lg transition-colors" title="Editar">
+                                    <i data-lucide="edit-2" class="w-4 h-4 text-zinc-400"></i>
+                                </button>
+                                <button class="p-2 hover:bg-zinc-600 rounded-lg transition-colors" title="Excluir">
+                                    <i data-lucide="trash-2" class="w-4 h-4 text-zinc-400"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="space-y-3">
+                            <div class="flex items-center justify-between text-sm">
+                                <span class="text-zinc-400">Professor:</span>
+                                <span class="text-white font-medium">Dr. Silva</span>
+                            </div>
+                            <div class="flex items-center justify-between text-sm">
+                                <span class="text-zinc-400">Créditos:</span>
+                                <span class="text-white font-medium">4</span>
+                            </div>
+                            <div class="flex items-center justify-between text-sm">
+                                <span class="text-zinc-400">Sala:</span>
+                                <span class="text-white font-medium">A101</span>
+                            </div>
+                        </div>
+
+                        <div class="mt-4 pt-4 border-t border-zinc-600">
+                            <div class="flex items-center justify-between text-xs">
+                                <span class="text-zinc-400">Horários:</span>
+                                <span class="text-white">Seg 08:00, Qua 10:00</span>
+                            </div>
+                        </div>
+                    </div>
+                </template>
+
+
+                <div class="bg-zinc-800 rounded-2xl shadow-xl border border-zinc-700 overflow-hidden">
+                    <div class="bg-gradient-to-r from-zinc-700 to-zinc-800 p-6 border-b border-zinc-600">
+                        <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+                            <h3 class="text-xl font-bold text-white flex items-center gap-2">
+                                <i data-lucide="calendar" class="w-5 h-5 text-green-400"></i>
+                                Cronograma de Horários
+                            </h3>
+                        </div>
+                    </div>
+
+                    <div class="overflow-x-auto">
+                        <table class="w-full">
+                            <thead class="bg-zinc-700/50">
+                                <tr>
+                                    <th
+                                        class="w-1/6 p-4 text-left text-sm font-semibold text-zinc-300 whitespace-nowrap">
+                                        <div class="flex items-center gap-2">
+                                            <i data-lucide="clock" class="w-4 h-4"></i>
+                                            Horário
+                                        </div>
+                                    </th>
+                                    <th
+                                        class="w-1/6 p-4 text-left text-sm font-semibold text-zinc-300 whitespace-nowrap">
+                                        <div class="flex items-center gap-2">
+                                            <i data-lucide="calendar" class="w-4 h-4"></i>
+                                            Segunda
+                                        </div>
+                                    </th>
+                                    <th
+                                        class="w-1/6 p-4 text-left text-sm font-semibold text-zinc-300 whitespace-nowrap">
+                                        <div class="flex items-center gap-2">
+                                            <i data-lucide="calendar" class="w-4 h-4"></i>
+                                            Terça
+                                        </div>
+                                    </th>
+                                    <th
+                                        class="w-1/6 p-4 text-left text-sm font-semibold text-zinc-300 whitespace-nowrap">
+                                        <div class="flex items-center gap-2">
+                                            <i data-lucide="calendar" class="w-4 h-4"></i>
+                                            Quarta
+                                        </div>
+                                    </th>
+                                    <th
+                                        class="w-1/6 p-4 text-left text-sm font-semibold text-zinc-300 whitespace-nowrap">
+                                        <div class="flex items-center gap-2">
+                                            <i data-lucide="calendar" class="w-4 h-4"></i>
+                                            Quinta
+                                        </div>
+                                    </th>
+                                    <th
+                                        class="w-1/6 p-4 text-left text-sm font-semibold text-zinc-300 whitespace-nowrap">
+                                        <div class="flex items-center gap-2">
+                                            <i data-lucide="calendar" class="w-4 h-4"></i>
+                                            Sexta
+                                        </div>
+                                    </th>
+                                </tr>
+                            </thead>
+                            <tbody id="college-schedule-body" class="divide-y divide-zinc-700/50">
+
+                            </tbody>
+                        </table>
+                    </div>
+
+
+                    <div class="bg-zinc-700/30 p-4 border-t border-zinc-600">
+                        <div class="flex items-center justify-between text-sm text-zinc-400">
+                            <div class="flex items-center gap-2">
+                                <i data-lucide="info" class="w-4 h-4"></i>
+                                <span>Clique em uma aula para ver detalhes</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="page-subject-detail" class="hidden p-6 bg-zinc-900 min-h-screen">
+
+                <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-8 gap-4">
+                    <div>
+                        <button id="btn-back-to-college"
+                            class="flex items-center gap-2 text-sm text-blue-400 hover:text-blue-300 mb-3 transition-colors group">
+                            <i data-lucide="arrow-left"
+                                class="w-4 h-4 group-hover:-translate-x-1 transition-transform"></i>
+                            Voltar para Faculdade
+                        </button>
+                        <div class="flex items-center gap-4">
+                            <div
+                                class="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center">
+                                <i data-lucide="book-open" class="w-6 h-6 text-white"></i>
+                            </div>
+                            <div>
+                                <h2 id="subject-detail-title" class="text-3xl font-bold text-white">Nome da Disciplina
+                                </h2>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 xl:grid-cols-3 gap-8">
+
+                    <div class="xl:col-span-1 space-y-8">
+
+                        <div class="bg-zinc-800 rounded-2xl shadow-xl border border-zinc-700 overflow-hidden">
+                            <div class="bg-gradient-to-r from-zinc-700 to-zinc-800 p-6 border-b border-zinc-600">
+                                <h3 class="text-xl font-bold text-white flex items-center gap-2">
+                                    <i data-lucide="list" class="w-5 h-5 text-blue-400"></i>
+                                    Tópicos de Estudo
+                                </h3>
+                            </div>
+                            <div class="p-6">
+                                <ul id="subject-topics-list" class="space-y-3 mb-6 max-h-60 overflow-auto">
+                                    <li class="text-center py-4 text-zinc-500">
+                                        <i data-lucide="book" class="w-8 h-8 mx-auto mb-2 opacity-50"></i>
+                                        <p class="text-sm">Nenhum tópico cadastrado</p>
+                                    </li>
+                                </ul>
+                                <form id="form-add-subject-topic" class="flex gap-3">
+                                    <div class="flex-1">
+                                        <input type="text" name="topicText" required
+                                            class="w-full px-4 py-3 bg-zinc-700 border border-zinc-600 rounded-lg text-white placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                            placeholder="Novo tópico de estudo...">
+                                    </div>
+                                    <button type="submit"
+                                        class="p-3 bg-blue-500 hover:bg-blue-600 rounded-lg transition-colors">
+                                        <i data-lucide="plus" class="w-5 h-5"></i>
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+
+
+                        <div class="bg-zinc-800 rounded-2xl shadow-xl border border-zinc-700 overflow-hidden">
+                            <div class="bg-gradient-to-r from-zinc-700 to-zinc-800 p-6 border-b border-zinc-600">
+                                <h3 class="text-xl font-bold text-white flex items-center gap-2">
+                                    <i data-lucide="video" class="w-5 h-5 text-green-400"></i>
+                                    Aulas ao Vivo
+                                </h3>
+                            </div>
+                            <div class="p-6">
+                                <ul id="subject-live-classes-list" class="space-y-3 mb-6 max-h-60 overflow-auto">
+                                    <li class="text-center py-4 text-zinc-500">
+                                        <i data-lucide="play-circle" class="w-8 h-8 mx-auto mb-2 opacity-50"></i>
+                                        <p class="text-sm">Nenhuma aula cadastrada</p>
+                                    </li>
+                                </ul>
+                                <form id="form-add-subject-live-class" class="flex gap-3">
+                                    <div class="flex-1">
+                                        <input type="text" name="classText" required
+                                            class="w-full px-4 py-3 bg-zinc-700 border border-zinc-600 rounded-lg text-white placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                            placeholder="Ex: Aula 01 - 20/11 19:00">
+                                    </div>
+                                    <button type="submit"
+                                        class="p-3 bg-blue-500 hover:bg-blue-600 rounded-lg transition-colors">
+                                        <i data-lucide="plus" class="w-5 h-5"></i>
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+
+
+                        <div class="bg-zinc-800 rounded-2xl shadow-xl border border-zinc-700 overflow-hidden">
+                            <div class="bg-gradient-to-r from-zinc-700 to-zinc-800 p-6 border-b border-zinc-600">
+                                <h3 class="text-xl font-bold text-white flex items-center gap-2">
+                                    <i data-lucide="clock" class="w-5 h-5 text-yellow-400"></i>
+                                    Horários
+                                </h3>
+                            </div>
+                            <div class="p-6">
+                                <form id="form-save-subject-schedule" class="space-y-6">
+                                    <div class="space-y-3">
+                                        <label class="block text-sm font-medium text-zinc-300 flex items-center gap-2">
+                                            <i data-lucide="calendar" class="w-4 h-4"></i>
+                                            Dias da Semana
+                                        </label>
+                                        <div class="grid grid-cols-2 gap-3">
+                                            <label
+                                                class="flex items-center gap-3 p-3 bg-zinc-700/50 rounded-lg border border-zinc-600 hover:border-zinc-500 transition-colors cursor-pointer">
+                                                <input type="checkbox" name="day" value="seg"
+                                                    class="form-checkbox text-blue-500 rounded">
+                                                <span class="text-white text-sm">Segunda</span>
+                                            </label>
+                                            <label
+                                                class="flex items-center gap-3 p-3 bg-zinc-700/50 rounded-lg border border-zinc-600 hover:border-zinc-500 transition-colors cursor-pointer">
+                                                <input type="checkbox" name="day" value="ter"
+                                                    class="form-checkbox text-blue-500 rounded">
+                                                <span class="text-white text-sm">Terça</span>
+                                            </label>
+                                            <label
+                                                class="flex items-center gap-3 p-3 bg-zinc-700/50 rounded-lg border border-zinc-600 hover:border-zinc-500 transition-colors cursor-pointer">
+                                                <input type="checkbox" name="day" value="qua"
+                                                    class="form-checkbox text-blue-500 rounded">
+                                                <span class="text-white text-sm">Quarta</span>
+                                            </label>
+                                            <label
+                                                class="flex items-center gap-3 p-3 bg-zinc-700/50 rounded-lg border border-zinc-600 hover:border-zinc-500 transition-colors cursor-pointer">
+                                                <input type="checkbox" name="day" value="qui"
+                                                    class="form-checkbox text-blue-500 rounded">
+                                                <span class="text-white text-sm">Quinta</span>
+                                            </label>
+                                            <label
+                                                class="flex items-center gap-3 p-3 bg-zinc-700/50 rounded-lg border border-zinc-600 hover:border-zinc-500 transition-colors cursor-pointer">
+                                                <input type="checkbox" name="day" value="sex"
+                                                    class="form-checkbox text-blue-500 rounded">
+                                                <span class="text-white text-sm">Sexta</span>
+                                            </label>
+                                        </div>
+                                    </div>
+                                    <div class="space-y-3">
+                                        <label class="block text-sm font-medium text-zinc-300 flex items-center gap-2">
+                                            <i data-lucide="clock" class="w-4 h-4"></i>
+                                            Horários
+                                        </label>
+                                        <div class="space-y-2">
+                                            <label
+                                                class="flex items-center gap-3 p-3 bg-zinc-700/50 rounded-lg border border-zinc-600 hover:border-zinc-500 transition-colors cursor-pointer">
+                                                <input type="checkbox" name="time" value="19:00 - 20:10"
+                                                    class="form-checkbox text-blue-500 rounded">
+                                                <span class="text-white text-sm">19:00 - 20:10</span>
+                                            </label>
+                                            <label
+                                                class="flex items-center gap-3 p-3 bg-zinc-700/50 rounded-lg border border-zinc-600 hover:border-zinc-500 transition-colors cursor-pointer">
+                                                <input type="checkbox" name="time" value="20:20 - 21:10"
+                                                    class="form-checkbox text-blue-500 rounded">
+                                                <span class="text-white text-sm">20:20 - 21:10</span>
+                                            </label>
+                                            <label
+                                                class="flex items-center gap-3 p-3 bg-zinc-700/50 rounded-lg border border-zinc-600 hover:border-zinc-500 transition-colors cursor-pointer">
+                                                <input type="checkbox" name="time" value="21:20 - 22:00"
+                                                    class="form-checkbox text-blue-500 rounded">
+                                                <span class="text-white text-sm">21:20 - 22:00</span>
+                                            </label>
+                                        </div>
+                                    </div>
+                                    <button type="submit"
+                                        class="w-full py-3 px-4 bg-blue-500 hover:bg-blue-600 rounded-lg font-semibold transition-colors flex items-center justify-center gap-2">
+                                        <i data-lucide="save" class="w-5 h-5"></i>
+                                        Salvar Horários
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+
+
+                    <div class="xl:col-span-2">
+                        <div class="bg-zinc-800 rounded-2xl shadow-xl border border-zinc-700 overflow-hidden h-full">
+                            <div class="bg-gradient-to-r from-zinc-700 to-zinc-800 p-6 border-b border-zinc-600">
+                                <div
+                                    class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+                                    <h3 class="text-xl font-bold text-white flex items-center gap-2">
+                                        <i data-lucide="clipboard-list" class="w-5 h-5 text-purple-400"></i>
+                                        Tarefas da Disciplina
+                                    </h3>
+                                    <button id="btn-show-add-subject-task-modal"
+                                        class="py-3 px-6 bg-blue-500 hover:bg-blue-600 rounded-lg font-semibold transition-colors flex items-center gap-2 group">
+                                        <i data-lucide="plus"
+                                            class="w-5 h-5 group-hover:scale-110 transition-transform"></i>
+                                        Nova Tarefa
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="p-6">
+                                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+                                    <div class="bg-zinc-700/30 rounded-xl p-4 border border-zinc-600">
+                                        <div class="flex items-center justify-between mb-4">
+                                            <h4 class="text-sm font-semibold text-blue-400 flex items-center gap-2">
+                                                <i data-lucide="circle" class="w-4 h-4"></i>
+                                                A Fazer
+                                            </h4>
+                                        </div>
+                                        <div id="subject-kanban-todo" class="min-h-40 space-y-3">
+                                            <div class="text-center py-8 text-zinc-500">
+                                                <i data-lucide="plus-circle"
+                                                    class="w-6 h-6 mx-auto mb-2 opacity-50"></i>
+                                                <p class="text-xs">Nenhuma tarefa</p>
+                                            </div>
+                                        </div>
+                                    </div>
+
+
+                                    <div class="bg-zinc-700/30 rounded-xl p-4 border border-zinc-600">
+                                        <div class="flex items-center justify-between mb-4">
+                                            <h4 class="text-sm font-semibold text-yellow-400 flex items-center gap-2">
+                                                <i data-lucide="play-circle" class="w-4 h-4"></i>
+                                                Em Progresso
+                                            </h4>
+                                        </div>
+                                        <div id="subject-kanban-doing" class="min-h-40 space-y-3">
+                                            <div class="text-center py-8 text-zinc-500">
+                                                <i data-lucide="play" class="w-6 h-6 mx-auto mb-2 opacity-50"></i>
+                                                <p class="text-xs">Nenhuma tarefa</p>
+                                            </div>
+                                        </div>
+                                    </div>
+
+
+                                    <div class="bg-zinc-700/30 rounded-xl p-4 border border-zinc-600">
+                                        <div class="flex items-center justify-between mb-4">
+                                            <h4 class="text-sm font-semibold text-green-400 flex items-center gap-2">
+                                                <i data-lucide="check-circle" class="w-4 h-4"></i>
+                                                Concluído
+                                            </h4>
+                                        </div>
+                                        <div id="subject-kanban-done" class="min-h-40 space-y-3">
+                                            <div class="text-center py-8 text-zinc-500">
+                                                <i data-lucide="check" class="w-6 h-6 mx-auto mb-2 opacity-50"></i>
+                                                <p class="text-xs">Nenhuma tarefa</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="page-calendar" class="hidden p-6 bg-zinc-900 min-h-screen">
+
+                <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-8 gap-4">
+                    <div>
+                        <h2 class="text-3xl font-bold text-white">Calendário</h2>
+                        <p class="text-zinc-400 mt-1">Acompanhe seus eventos e compromissos</p>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 xl:grid-cols-3 gap-8">
+
+                    <div class="xl:col-span-2">
+                        <div class="bg-zinc-800 rounded-2xl shadow-xl border border-zinc-700 overflow-hidden">
+                            <div class="bg-gradient-to-r from-zinc-700 to-zinc-800 p-6 border-b border-zinc-600">
+                                <div
+                                    class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+                                    <h3 class="text-xl font-bold text-white flex items-center gap-2">
+                                        <i data-lucide="calendar" class="w-5 h-5 text-blue-400"></i>
+                                        Calendário
+                                    </h3>
+
+                                </div>
+                            </div>
+                            <div>
+                                <div id="calendar-container" class="bg-zinc-700/30 p-4">
+
+                                    <div class="grid grid-cols-7 gap-2" id="calendar-grid">
+
+                                        <div class="text-center py-8">
+                                            <div class="flex flex-col items-center justify-center gap-3">
+                                                <div
+                                                    class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500">
+                                                </div>
+                                                <p class="text-zinc-400">Carregando calendário...</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+
+                    <div class="xl:col-span-1">
+                        <div class="bg-zinc-800 rounded-2xl shadow-xl border border-zinc-700 overflow-hidden h-full">
+                            <div class="bg-gradient-to-r from-zinc-700 to-zinc-800 p-6 border-b border-zinc-600">
+                                <h3 id="calendar-agenda-title"
+                                    class="text-xl font-bold text-white flex items-center gap-2">
+                                    <i data-lucide="calendar-days" class="w-5 h-5 text-green-400"></i>
+                                    Agenda do Dia
+                                </h3>
+                                <p class="text-zinc-400 text-sm mt-1" id="selected-date">Selecione um dia no calendário
+                                </p>
+                            </div>
+                            <div class="p-6">
+                                <div id="calendar-agenda-list" class="space-y-4 max-h-96 overflow-auto">
+                                    <div class="text-center py-8 text-zinc-500">
+                                        <i data-lucide="calendar" class="w-12 h-12 mx-auto mb-3 opacity-50"></i>
+                                        <p class="text-sm">Nenhum evento para este dia</p>
+                                        <p class="text-xs mt-1">Clique em um dia no calendário para ver os eventos</p>
+                                    </div>
+                                </div>
+
+
+                                <div class="mt-8 pt-6 border-t border-zinc-600">
+                                    <h4 class="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                                        <i data-lucide="clock" class="w-4 h-4 text-yellow-400"></i>
+                                        Próximos Eventos
+                                    </h4>
+                                    <div class="space-y-3">
+                                        <div
+                                            class="flex items-center gap-3 p-3 bg-zinc-700/50 rounded-lg border border-zinc-600">
+                                            <div class="w-2 h-2 bg-blue-500 rounded-full"></div>
+                                            <div class="flex-1">
+                                                <p class="text-white text-sm font-medium">Reunião de Projeto</p>
+                                                <p class="text-zinc-400 text-xs">Amanhã • 14:00</p>
+                                            </div>
+                                        </div>
+                                        <div
+                                            class="flex items-center gap-3 p-3 bg-zinc-700/50 rounded-lg border border-zinc-600">
+                                            <div class="w-2 h-2 bg-green-500 rounded-full"></div>
+                                            <div class="flex-1">
+                                                <p class="text-white text-sm font-medium">Entrega de Trabalho</p>
+                                                <p class="text-zinc-400 text-xs">15/12 • 23:59</p>
+                                            </div>
+                                        </div>
+                                        <div
+                                            class="flex items-center gap-3 p-3 bg-zinc-700/50 rounded-lg border border-zinc-600">
+                                            <div class="w-2 h-2 bg-purple-500 rounded-full"></div>
+                                            <div class="flex-1">
+                                                <p class="text-white text-sm font-medium">Aula de Matemática</p>
+                                                <p class="text-zinc-400 text-xs">16/12 • 08:00</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+
+        </main>
+
+    </div>
+
+    <div id="slide-over-container" class="fixed inset-0 z-40 hidden">
+        <div id="slide-over-overlay" class="absolute inset-0 bg-black/70 backdrop-blur-sm"></div>
+        <div id="slide-over-panel"
+            class="absolute right-0 top-0 h-full w-full max-w-lg bg-zinc-800 shadow-xl overflow-y-auto p-6 transform translate-x-full transition-transform duration-300 ease-in-out">
+            <div class="flex justify-between items-center mb-6">
+                <h3 id="slide-over-title" class="text-2xl font-bold">Modal Title</h3>
+                <button id="btn-close-slide-over" class="text-zinc-500 hover:text-white">
+                    <i data-lucide="x" class="w-6 h-6"></i>
+                </button>
+            </div>
+            <div id="slide-over-content">
+            </div>
+        </div>
+    </div>
+
+    <div id="modal-container" class="fixed inset-0 z-50 hidden items-center justify-center p-4">
+        <div class="absolute inset-0 bg-black/70"></div>
+        <div class="relative bg-zinc-800 w-full max-w-md p-6 rounded-lg shadow-xl">
+            <h3 id="modal-title" class="text-xl font-bold mb-4">Título do Modal</h3>
+            <p id="modal-message" class="text-zinc-300 mb-6">Mensagem do modal...</p>
+            <div id="modal-actions" class="flex justify-end gap-3">
+                <button id="modal-btn-confirm"
+                    class="py-2 px-4 bg-blue-500 hover:bg-blue-600 rounded-md font-semibold">Confirmar</button>
+                <button id="modal-btn-cancel"
+                    class="py-2 px-4 bg-zinc-700 hover:bg-zinc-600 rounded-md font-semibold">Cancelar</button>
+            </div>
+        </div>
+    </div>
+
+
+    <div id="total-focus-container"
+        class="hidden fixed inset-0 bg-zinc-900 z-[90] p-10 flex-col items-center justify-center">
+        <button id="btn-exit-focus-mode" class="absolute top-6 right-6 text-zinc-500 hover:text-white transition-colors"
+            title="Sair do Modo Foco">
+            <i data-lucide="minimize" class="w-7 h-7"></i>
+        </button>
+        <div id="focus-mode-pomodoro" class="flex flex-col items-center">
+
+            <div id="pomodoro-time-focus" class="text-9xl font-bold text-center my-10 text-white">25:00</div>
+            <div class="flex justify-center gap-4">
+                <button id="pomodoro-start-focus"
+                    class="py-4 px-8 bg-blue-500 hover:bg-blue-600 rounded-lg text-lg font-semibold uppercase">Iniciar</button>
+                <button id="pomodoro-reset-focus"
+                    class="py-4 px-8 bg-zinc-700 hover:bg-zinc-600 rounded-lg text-lg font-semibold uppercase">Resetar</button>
+            </div>
+        </div>
+        <div id="focus-mode-task" class="mt-12 text-center max-w-2xl">
+            <p class="text-xl text-zinc-400 mb-2">Tarefa em foco:</p>
+            <p id="focus-mode-task-title" class="text-3xl font-semibold text-white truncate">Nenhuma tarefa selecionada
+            </p>
+        </div>
+    </div>
+
+    
+    <script type="module" src="assets/app.mjs"></script>
+</body>
+
+</html>
