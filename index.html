@@ -139,7 +139,7 @@
                 </button>
 
                 <div id="notification-panel"
-                    class="hidden absolute bottom-full left-0 mb-2 w-72 bg-zinc-700 rounded-lg shadow-xl border border-zinc-600 z-50">
+                    class="hidden absolute bottom-full left-0 mb-2 w-72 bg-zinc-700 rounded-lg shadow-xl border border-zinc-600 z-50 md:top-0 md:left-full md:ml-2 md:bottom-auto md:mb-0">
                     <div class="p-3 border-b border-zinc-600 flex justify-between items-center">
                         <h4 class="font-semibold text-white">Notificações</h4>
                         <button id="btn-mark-all-read"
@@ -197,18 +197,6 @@
             </button>
 
             <div id="mobile-menu-overlay" class="hidden md:hidden fixed inset-0 bg-black/50 z-10"></div>
-
-            <div id="notification-permission-banner"
-                class="bg-blue-900/50 p-4 rounded-xl border border-blue-700 mb-8 flex justify-between items-center hidden">
-                <p class="text-white font-medium flex items-center gap-2">
-                    <i data-lucide="bell-ring" class="w-5 h-5 text-blue-400"></i>
-                    Ative as notificações para receber alertas de tarefas.
-                </p>
-                <button id="btn-request-notification-permission"
-                    class="py-2 px-4 bg-blue-500 hover:bg-blue-600 rounded-lg text-sm font-semibold transition-colors">
-                    Ativar Notificações
-                </button>
-            </div>
 
             <div id="page-dashboard" class="hidden p-6 bg-zinc-900 min-h-screen">
                 <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-4">
@@ -291,6 +279,24 @@
                     </div>
                 </div>
 
+                <div class="bg-zinc-800 rounded-2xl shadow-xl border border-zinc-700 overflow-hidden mb-8">
+                    <div class="bg-gradient-to-r from-zinc-700 to-zinc-800 p-6 border-b border-zinc-600">
+                        <h3 class="text-xl font-bold text-white flex items-center gap-2">
+                            <i data-lucide="activity" class="w-5 h-5 text-yellow-400"></i>
+                            Resumo de Status das Tarefas por Área
+                        </h3>
+                    </div>
+                    <div class="p-6">
+                        <div id="task-status-summary" class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                            <div class="col-span-full text-center py-4 text-zinc-500">
+                                <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500 mx-auto mb-2">
+                                </div>
+                                Carregando resumo...
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="grid grid-cols-1 xl:grid-cols-3 gap-8">
                     <div class="xl:col-span-1">
                         <div class="bg-zinc-800 rounded-2xl shadow-xl border border-zinc-700 overflow-hidden h-full">
@@ -316,9 +322,19 @@
                                 </div>
 
                                 <div class="relative flex justify-center items-center my-8">
-                                    <div
-                                        class="relative w-48 h-48 rounded-full bg-gradient-to-br from-blue-900 to-blue-700 shadow-lg border-4 border-blue-600 flex items-center justify-center">
-                                        <div id="pomodoro-time" class="text-4xl font-bold text-white">25:00</div>
+                                    <div id="pomodoro-visual-circle"
+                                        class="relative w-48 h-48 rounded-full bg-gradient-to-br from-blue-900 to-blue-700 shadow-lg border-4 border-blue-600 flex items-center justify-center transition-all duration-300">
+
+                                        <svg class="absolute w-full h-full" viewBox="0 0 100 100">
+                                            <circle class="pomodoro-progress-bg" cx="50" cy="50" r="45"
+                                                stroke-width="5"></circle>
+                                            <circle id="pomodoro-progress-bar" class="pomodoro-progress-bar" cx="50"
+                                                cy="50" r="45" stroke-width="5"></circle>
+                                        </svg>
+
+                                        <div id="pomodoro-time"
+                                            class="relative text-4xl font-bold text-white transition-all duration-300">
+                                            25:00</div>
                                     </div>
                                 </div>
 
@@ -429,7 +445,7 @@
 
                         <div class="overflow-x-auto">
                             <table class="w-full">
-                                <thead class="bg-zinc-700/50">
+                                <thead class="bg-zinc-700/50" id="dashboard-schedule-head">
                                     <tr>
                                         <th
                                             class="w-1/6 p-4 text-left text-sm font-semibold text-zinc-300 whitespace-nowrap">
@@ -921,7 +937,7 @@
 
                     <div class="overflow-x-auto">
                         <table class="w-full">
-                            <thead class="bg-zinc-700/50">
+                            <thead class="bg-zinc-700/50" id="college-schedule-head">
                                 <tr>
                                     <th
                                         class="w-1/6 p-4 text-left text-sm font-semibold text-zinc-300 whitespace-nowrap">
@@ -1366,30 +1382,95 @@
 
 
     <div id="total-focus-container"
-        class="hidden fixed inset-0 bg-zinc-900 z-[90] p-10 flex-col items-center justify-center">
-        <button id="btn-exit-focus-mode" class="absolute top-6 right-6 text-zinc-500 hover:text-white transition-colors"
-            title="Sair do Modo Foco">
-            <i data-lucide="minimize" class="w-7 h-7"></i>
-        </button>
-        <div id="focus-mode-pomodoro" class="flex flex-col items-center">
+        class="hidden fixed inset-0 bg-zinc-900 z-[90] p-10 flex-col items-center justify-center overflow-hidden">
 
-            <div id="pomodoro-time-focus" class="text-9xl font-bold text-center my-10 text-white">25:00</div>
-            <div class="flex justify-center gap-4">
-                <button id="pomodoro-start-focus"
-                    class="py-4 px-8 bg-blue-500 hover:bg-blue-600 rounded-lg text-lg font-semibold uppercase">Iniciar</button>
-                <button id="pomodoro-reset-focus"
-                    class="py-4 px-8 bg-zinc-700 hover:bg-zinc-600 rounded-lg text-lg font-semibold uppercase">Resetar</button>
+        <div id="focus-bg-container">
+            <video data-bg-id="video1" class="focus-bg" src="assets/bgs/19368-301525727_small.mp4" loop muted
+                playsinline></video>
+            <video data-bg-id="video2" class="focus-bg" src="assets/bgs/203759-922186910.mp4" loop muted
+                playsinline></video>
+            <img data-bg-id="image1" class="focus-bg" src="assets/bgs/473931657_9475037925841782_7241819810006637302_n.jpg"
+                alt="Background Image">
+        </div>
+
+        <div id="bg-selector">
+            <button class="bg-selector-btn flex items-center justify-center bg-zinc-700" data-bg="video1" title="Vídeo 1">
+                <i data-lucide="video" class="w-5 h-5 text-zinc-400"></i>
+            </button>
+            <button class="bg-selector-btn flex items-center justify-center bg-zinc-700" data-bg="video2" title="Vídeo 2">
+                <i data-lucide="video" class="w-5 h-5 text-zinc-400"></i>
+            </button>
+            <button class="bg-selector-btn" data-bg="image1" title="Imagem"
+                    style="background-image: url('assets/bgs/473931657_9475037925841782_7241819810006637302_n.jpg');">
+            </button>
+            <button class="bg-selector-btn flex items-center justify-center bg-zinc-700" data-bg="none" title="Nenhum">
+                <i data-lucide="ban" class="w-5 h-5 text-zinc-400"></i>
+            </button>
+        </div>
+
+        <div id="focus-content-wrapper">
+
+            <button id="btn-exit-focus-mode"
+                class="absolute top-6 right-6 text-zinc-300 hover:text-white transition-colors"
+                title="Sair do Modo Foco">
+                <i data-lucide="minimize" class="w-7 h-7"></i>
+            </button>
+
+            <div id="focus-mode-pomodoro" class="flex flex-col items-center">
+                <div id="pomodoro-time-focus" class="text-9xl font-bold text-center my-10 text-white"
+                    style="text-shadow: 0 0 20px rgba(0,0,0,0.5);">25:00</div>
+                <div class="flex justify-center gap-4">
+                    <button id="pomodoro-start-focus"
+                        class="py-4 px-8 bg-blue-500/80 backdrop-blur-sm hover:bg-blue-600 rounded-lg text-lg font-semibold uppercase border border-blue-500">Iniciar</button>
+                    <button id="pomodoro-reset-focus"
+                        class="py-4 px-8 bg-zinc-700/80 backdrop-blur-sm hover:bg-zinc-600 rounded-lg text-lg font-semibold uppercase border border-zinc-600">Resetar</button>
+                </div>
             </div>
-        </div>
-        <div id="focus-mode-task" class="mt-12 text-center max-w-2xl">
-            <p class="text-xl text-zinc-400 mb-2">Tarefa em foco:</p>
-            <p id="focus-mode-task-title" class="text-3xl font-semibold text-white truncate">Nenhuma tarefa selecionada
-            </p>
-        </div>
-    </div>
 
+            <div id="focus-mode-task" class="mt-12 text-center max-w-2xl">
+                <p class="text-xl text-zinc-300 mb-2" style="text-shadow: 0 0 10px rgba(0,0,0,0.5);">Tarefa em foco:</p>
+                <p id="focus-mode-task-title" class="text-3xl font-semibold text-white truncate"
+                    style="text-shadow: 0 0 10px rgba(0,0,0,0.5);">Nenhuma tarefa selecionada</p>
+            </div>
 
-    <script type="module" src="assets/app.mjs"></script>
+            <div id="custom-music-player"
+            class="absolute bottom-6 right-6 p-4 rounded-xl bg-zinc-900/50 backdrop-blur-md shadow-lg border border-zinc-700/50 w-72 transition-all duration-300 transform translate-x-full opacity-0 z-40">
+
+                <div class="flex items-center justify-between mb-3">
+                    <div class="flex-1 mr-2">
+                        <p id="player-track-title" class="text-white text-md font-semibold truncate">Nome da Música</p>
+                        <p id="player-track-artist" class="text-zinc-400 text-xs truncate">Artista</p>
+                    </div>
+
+                    <div class="player-controls">
+                        <button id="player-prev-track" title="Anterior">
+                            <i data-lucide="skip-back" class="w-4 h-4"></i>
+                        </button>
+                        <button id="player-toggle-play"
+                            class="p-2 bg-blue-600 hover:bg-blue-700 rounded-full text-white">
+                            <i data-lucide="play" class="w-4 h-4"></i>
+                            <i data-lucide="pause" class="w-4 h-4"></i> </button>
+                        <button id="player-next-track" title="Próxima">
+                            <i data-lucide="skip-forward" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="player-progress-container relative h-1 bg-zinc-600 rounded-full mb-2">
+                    <div id="player-progress-bar" class="absolute h-full bg-blue-500 rounded-full" style="width: 0%;">
+                    </div>
+                </div>
+
+                <div class="flex justify-between text-xs text-zinc-400">
+                    <span id="player-current-time">0:00</span>
+                    <span id="player-duration">0:00</span>
+                </div>
+            </div>
+
+        </div>
+
+        <audio id="global-audio-player" preload="none"></audio>
+        <script type="module" src="assets/app.mjs"></script>
 </body>
 
 </html>

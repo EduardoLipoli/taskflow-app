@@ -70,6 +70,26 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
         let modalResolve = null;
         let automationRunning = false;
 
+        // 💡 SUBTITUÍDO: Novas músicas (exemplo) e variáveis do player
+        const musicTracks = [
+            { id: 'ambient1', title: 'Ambient 1', artist: 'Focus Mix', src: 'assets/musics/ambient1.mp3' },
+            { id: 'ambient2', title: 'Ambient 2', artist: 'Focus Mix', src: 'assets/musics/ambient2.mp3' },
+            { id: 'ambient3', title: 'Ambient 3', artist: 'Focus Mix', src: 'assets/musics/ambient3.mp3' },
+            { id: 'forest1', title: 'Forest', artist: 'Nature', src: 'assets/musics/forest1.mp3' },
+            { id: 'lofi2', title: 'Lofi 2', artist: 'Chill Beats', src: 'assets/musics/lofi2.mp3' },
+            { id: 'lofi4', title: 'Lofi 4', artist: 'Chill Beats', src: 'assets/musics/lofi4.mp3' },
+            { id: 'trap4', title: 'Trap 4', artist: 'Focus Mix', src: 'assets/musics/trap4.mp3' }
+        ];
+
+        let currentTrackIndex = 0;
+        let audioContext; // Contexto de áudio global
+        let currentAudioSource; // Fonte de áudio atualmente tocando
+        let currentAudioBuffer; // Buffer da música carregada
+        let isPlaying = false;
+        let startTime = 0; // Quando a música começou a tocar
+        let currentPlaybackTime = 0; // Posição atual na faixa (para pause/play)
+        let animationFrameId; // Para a atualização da barra de progresso
+
         const COLORS = {
             bgPrimary: 'bg-zinc-900',
             bgSecondary: 'bg-zinc-800',
@@ -307,6 +327,18 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
             document.getElementById('btn-exit-focus-mode').addEventListener('click', toggleFocusMode);
             document.getElementById('pomodoro-start-focus').addEventListener('click', () => pomodoro.start());
             document.getElementById('pomodoro-reset-focus').addEventListener('click', () => pomodoro.reset());
+            document.getElementById('player-toggle-play').addEventListener('click', togglePlayPause);
+            document.getElementById('player-next-track').addEventListener('click', nextTrack);
+            document.getElementById('player-prev-track').addEventListener('click', previousTrack);
+
+            loadTrack(currentTrackIndex);
+
+            document.getElementById('bg-selector').addEventListener('click', (e) => {
+                const button = e.target.closest('.bg-selector-btn');
+                if (button && button.dataset.bg) {
+                    setFocusBackground(button.dataset.bg);
+                }
+            });
         }
 
         function toggleAuthForms(showLogin) {
@@ -374,6 +406,20 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
             return `users/${userId}`;
         }
 
+        async function addNotification(text, type = 'info') {
+            if (!userId) return;
+            try {
+                await addDoc(getNotificationsCollection(), {
+                    text: text,
+                    type: type,
+                    read: false,
+                    createdAt: serverTimestamp()
+                });
+            } catch (error) {
+                console.error("Erro ao adicionar notificação:", error);
+            }
+        }
+
 
         const getNotificationsCollection = () => collection(db, `${getBasePath()}/notifications`);
         const getNotificationDoc = (id) => doc(db, `${getBasePath()}/notifications/${id}`);
@@ -419,7 +465,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
             clearSubjectListeners();
 
 
-            const tasksQuery = query(getTasksCollection());
+            const tasksQuery = query(getTasksCollection(), orderBy('createdAt', 'asc'));
             unsubscribeTasks = onSnapshot(tasksQuery, (snapshot) => {
                 allTasks = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
@@ -456,23 +502,6 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
                 });
 
             }, (error) => console.error("Erro ao carregar projetos da agência:", error));
-
-
-            async function addNotification(text, type = 'info') {
-                if (!userId) return;
-                try {
-
-                    await addDoc(getNotificationsCollection(), {
-                        text: text,
-                        type: type,
-                        read: false,
-                        createdAt: serverTimestamp()
-                    });
-                } catch (error) {
-                    console.error("Erro ao adicionar notificação:", error);
-                }
-            }
-
 
             const subjectsQuery = query(getSubjectsCollection());
             unsubscribeSubjects = onSnapshot(subjectsQuery, (snapshot) => {
@@ -756,6 +785,8 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
             const tasksCollege = Object.values(allSubjectTasks).flat();
             const allCombinedTasks = [...tasksMain, ...tasksAgency, ...tasksCollege];
 
+            renderTaskStatusSummary(allCombinedTasks);
+
 
             let pendingCount = 0;
             let doingCount = 0;
@@ -1033,6 +1064,8 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
                     showSubjectDetailPage(el.dataset.subjectId);
                 });
             });
+
+            renderScheduleGrid('dashboard-schedule-head', 'dashboard-schedule-body', subjects);
         }
 
 
@@ -1215,8 +1248,8 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 
                 new Sortable(col, {
                     group: 'sharedTasks',
-                    animation: 150,
-                    ghostClass: 'opacity-50',
+                    animation: 250,
+                    ghostClass: 'kanban-ghost-effect',
                     draggable: '.task-card',
                     onEnd: (evt) => {
                         const taskId = evt.item.dataset.id;
@@ -1409,7 +1442,9 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
                     </div>
                     <div>
                         <label for="taskDescDetail" class="block text-sm font-medium text-zinc-300 mb-1">Descrição</label>
-                        <textarea id="taskDescDetail" name="description" rows="5" class="w-full px-3 py-2 bg-zinc-700 border border-zinc-600 rounded-md">${task.description || ''}</textarea>
+                        <textarea id="taskDescDetail" name="description" rows="10" 
+                        class="w-full px-4 py-3 bg-zinc-800 border border-zinc-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm whitespace-pre-wrap leading-relaxed" 
+                        placeholder="Use quebras de linha para listar informações.&#10;&#10;Ex: Título: Nome do Título&#10;Descrição: Detalhe do item">${task.description || ''}</textarea>
                     </div>
                     <div>
                         <label for="taskCategoryDetail" class="block text-sm font-medium text-zinc-300 mb-1">Categoria</label>
@@ -1879,7 +1914,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
         function loadProjectTasks(projectId) {
             if (unsubscribeProjectTasks[projectId]) unsubscribeProjectTasks[projectId]();
 
-            const tasksQuery = query(getProjectTasksCollection(projectId));
+            const tasksQuery = query(getProjectTasksCollection(projectId), orderBy('createdAt', 'asc'));
             unsubscribeProjectTasks[projectId] = onSnapshot(tasksQuery, (snapshot) => {
                 const projectTasks = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                 allProjectTasks[projectId] = projectTasks;
@@ -2064,7 +2099,9 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-zinc-300 mb-1">Descrição</label>
-                        <textarea name="description" rows="5" class="w-full px-3 py-2 bg-zinc-700 border border-zinc-600 rounded-md">${task.description || ''}</textarea>
+                        <textarea name="description" rows="10" 
+                        class="w-full px-4 py-3 bg-zinc-800 border border-zinc-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm whitespace-pre-wrap leading-relaxed" 
+                        placeholder="Use quebras de linha para listar informações (como no seu print).">${task.description || ''}</textarea>
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-zinc-300 mb-1">Data de Entrega</label>
@@ -2390,6 +2427,8 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
                     showSubjectDetailPage(el.dataset.subjectId);
                 });
             });
+
+            renderScheduleGrid('college-schedule-head', 'college-schedule-body', subjects);
         }
 
 
@@ -2448,7 +2487,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
             });
 
 
-            const tasksQuery = query(getSubjectTasksCollection(subjectId));
+            const tasksQuery = query(getSubjectTasksCollection(subjectId), orderBy('createdAt', 'asc'));
             unsubscribeSubjectItems.tasks = onSnapshot(tasksQuery, (snapshot) => {
                 const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), subjectId: subjectId, subjectName: allSubjects.find(s => s.id === subjectId)?.name }));
                 allSubjectTasks[subjectId] = items;
@@ -2752,7 +2791,9 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
             const formHtml = `
                 <form id="form-edit-subject-task-modal" class="space-y-4">
                     <input type="text" name="title" required value="${task.title}" class="w-full px-3 py-2 bg-zinc-700 border border-zinc-600 rounded-md" placeholder="Título da tarefa...">
-                    <textarea name="description" rows="3" class="w-full px-3 py-2 bg-zinc-700 border border-zinc-600 rounded-md" placeholder="Descrição (opcional)...">${task.description || ''}</textarea>
+                    <textarea name="description" rows="10" 
+                    class="w-full px-4 py-3 bg-zinc-800 border border-zinc-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm whitespace-pre-wrap leading-relaxed" 
+                    placeholder="Use quebras de linha para listar informações (como no seu print).">${task.description || ''}</textarea>
                     <div>
                         <label class="block text-sm font-medium text-zinc-300 mb-1">Data de Entrega</label>
                         <input type="date" name="dueDate" value="${task.dueDate || ''}" class="w-full px-3 py-2 bg-zinc-700 border border-zinc-600 rounded-md text-zinc-300">
@@ -2914,9 +2955,12 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 
 
             Object.values(allProjectTasks).flat().filter(t => t.dueDate).forEach(t => {
+                const projectTitle = t.projectTitle || 'Projeto';
+                const eventTitle = `[${projectTitle}] ${t.title}`; 
+                
                 events.push({
                     id: `${t.projectId}-${t.id}`,
-                    title: `[${t.projectTitle}] ${t.title}`,
+                    title: eventTitle,
                     start: t.dueDate,
                     allDay: true,
                     color: '#8b5cf6',
@@ -3111,8 +3155,31 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
             });
         }
 
+        let pomodoroAudioContext; // Contexto de áudio reutilizável
 
+        // Função para tocar o som de 'tick'
+        function playPomodoroTick() {
+            if (!pomodoroAudioContext) return;
+            
+            try {
+                const oscillator = pomodoroAudioContext.createOscillator();
+                const gainNode = pomodoroAudioContext.createGain();
 
+                oscillator.connect(gainNode);
+                gainNode.connect(pomodoroAudioContext.destination);
+
+                oscillator.type = 'sine'; // Um "beep" curto
+                oscillator.frequency.setValueAtTime(880, pomodoroAudioContext.currentTime); // Frequência (A5)
+                gainNode.gain.setValueAtTime(0.3, pomodoroAudioContext.currentTime); // Volume sutil
+
+                oscillator.start(pomodoroAudioContext.currentTime);
+                // Para o som bem rápido
+                gainNode.gain.exponentialRampToValueAtTime(0.00001, pomodoroAudioContext.currentTime + 0.05);
+                oscillator.stop(pomodoroAudioContext.currentTime + 0.05);
+            } catch (e) {
+                console.error("Erro ao tocar o som de tick:", e);
+            }
+        }
 
         const pomodoro = {
             modes: {
@@ -3143,29 +3210,44 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
                 this.reset();
             },
 
-            updateDisplay() {
+updateDisplay() {
                 const minutes = Math.floor(this.timeRemaining / 60).toString().padStart(2, '0');
                 const seconds = (this.timeRemaining % 60).toString().padStart(2, '0');
                 const timeStr = `${minutes}:${seconds}`;
 
-
+                // 1. Atualiza o texto do tempo (como antes)
                 if (this.ui.time) this.ui.time.textContent = timeStr;
                 document.getElementById('pomodoro-time-focus').textContent = timeStr;
 
-
+                // 2. Atualiza o título da página (como antes)
                 if (this.isRunning) {
-
                     document.title = `${timeStr} - ${this.currentMode}`;
                 } else {
-
                     document.title = currentDefaultTitle;
                 }
 
+                // 3. 💡 NOVO: Lógica de atualização do círculo SVG
+                const progressBar = document.getElementById('pomodoro-progress-bar');
+                if (progressBar) {
+                    const totalDuration = this.modes[this.currentMode] * 60;
+                    const radius = progressBar.r.baseVal.value;
+                    const circumference = 2 * Math.PI * radius; // Circunferência
 
+                    // Progresso de "enchimento" (0 no início, 1 no fim)
+                    const progress = (totalDuration - this.timeRemaining) / totalDuration;
+                    
+                    // Calcula o "vazio" (offset)
+                    const offset = circumference - (progress * circumference);
 
-
+                    // Define o tamanho total do traço
+                    progressBar.style.strokeDasharray = `${circumference} ${circumference}`;
+                    // Define o quanto do traço está "vazio"
+                    progressBar.style.strokeDashoffset = offset;
+                }
+                // 4. Fim da lógica SVG
+                
+                // 5. Atualiza os botões (como antes)
                 if (this.ui.modeBtnFocus) {
-
                     this.ui.modeBtnFocus.classList.toggle('bg-blue-500', this.currentMode === 'focus');
                     this.ui.modeBtnFocus.classList.toggle('text-white', this.currentMode === 'focus');
                     this.ui.modeBtnFocus.classList.toggle('hover:bg-zinc-600', this.currentMode !== 'focus');
@@ -3184,11 +3266,19 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
                 }
             },
 
-            start() {
+start() {
                 if (this.isRunning) {
                     this.pause();
                 } else {
-
+                    // 💡 INICIALIZA O CONTEXTO DE ÁUDIO (SE FOR A PRIMEIRA VEZ)
+                    if (!pomodoroAudioContext) {
+                        try {
+                            pomodoroAudioContext = new (window.AudioContext || window.webkitAudioContext)();
+                        } catch (e) {
+                            console.warn("Web Audio API não suportada.", e);
+                        }
+                    }
+                
                     this.isRunning = true;
                     if (this.ui.startBtn) {
                         this.ui.startBtn.innerHTML = '<i data-lucide="pause" class="w-5 h-5"></i> Pausar';
@@ -3198,6 +3288,15 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
                     this.timerId = setInterval(() => {
                         this.timeRemaining--;
                         this.updateDisplay();
+
+                        // 💡 LÓGICA DO SOM DE CONTAGEM REGRESSIVA
+                        if (this.timeRemaining <= 5 && this.timeRemaining > 0) {
+                            if (pomodoroAudioContext) {
+                                playPomodoroTick();
+                            }
+                        }
+                        // FIM DA LÓGICA DO SOM
+
                         if (this.timeRemaining <= 0) {
                             this.completeCycle();
                         }
@@ -3224,26 +3323,31 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
                 this.updateDisplay();
             },
 
-            async completeCycle() {
+async completeCycle() {
                 this.pause();
 
-                try {
-                    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                    const oscillator = audioContext.createOscillator();
-                    const gainNode = audioContext.createGain();
-                    oscillator.connect(gainNode);
-                    gainNode.connect(audioContext.destination);
-                    oscillator.type = 'sine';
-                    oscillator.frequency.setValueAtTime(440, audioContext.currentTime);
-                    gainNode.gain.setValueAtTime(0.5, audioContext.currentTime);
-                    oscillator.start();
-                    oscillator.stop(audioContext.currentTime + 0.5);
-                } catch (e) {
-                    console.warn("Não foi possível tocar o som de notificação.", e);
+                // 💡 USA O CONTEXTO DE ÁUDIO JÁ EXISTENTE
+                if (pomodoroAudioContext) {
+                    try {
+                        // Toca o som de "concluído" (diferente do "tick")
+                        const oscillator = pomodoroAudioContext.createOscillator();
+                        const gainNode = pomodoroAudioContext.createGain();
+                        oscillator.connect(gainNode);
+                        gainNode.connect(pomodoroAudioContext.destination);
+                        oscillator.type = 'sine';
+                        oscillator.frequency.setValueAtTime(440, pomodoroAudioContext.currentTime); // Som mais grave (A4)
+                        gainNode.gain.setValueAtTime(0.5, pomodoroAudioContext.currentTime);
+                        oscillator.start();
+                        oscillator.stop(pomodoroAudioContext.currentTime + 0.5); // Toca por 0.5s
+                    } catch (e) {
+                        console.warn("Não foi possível tocar o som de notificação.", e);
+                    }
                 }
+                // (O código antigo de criação de áudio foi removido daqui)
 
                 const duration = this.modes[this.currentMode];
                 const taskSelect = document.getElementById('pomodoro-task-select');
+                // ... (o resto da função completeCycle permanece igual) ...
                 const selectedTaskValue = taskSelect.value;
                 const selectedTaskText = taskSelect.options[taskSelect.selectedIndex].text;
 
@@ -3297,13 +3401,23 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
         function toggleFocusMode() {
             const appWrapper = document.getElementById('app-wrapper');
             const focusContainer = document.getElementById('total-focus-container');
-            const isFocus = focusContainer.classList.contains('hidden');
+            const isEnteringFocusMode = focusContainer.classList.contains('hidden');
 
-            if (isFocus) {
+            if (isEnteringFocusMode) {
+                // Entrando no modo foco
                 appWrapper.classList.add('hidden');
                 appWrapper.classList.remove('flex');
                 focusContainer.classList.remove('hidden');
                 focusContainer.classList.add('flex');
+
+                // Mostra o player de música flutuante
+                const musicPlayer = document.getElementById('custom-music-player');
+                if (musicPlayer) {
+                    musicPlayer.classList.add('active');
+                }
+
+                // 💡 NOVO: Carrega o último plano de fundo usado
+                setFocusBackground(currentFocusBackground);
 
                 pomodoro.updateDisplay();
 
@@ -3319,10 +3433,21 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 
                 if (typeof lucide !== 'undefined') lucide.createIcons();
             } else {
+                // Saindo do modo foco
                 appWrapper.classList.remove('hidden');
                 appWrapper.classList.add('flex');
                 focusContainer.classList.add('hidden');
                 focusContainer.classList.remove('flex');
+
+                // Esconde o player de música e para o áudio
+                const musicPlayer = document.getElementById('custom-music-player');
+                if (musicPlayer) {
+                    musicPlayer.classList.remove('active');
+                }
+                pauseTrack(); // Garante que a música para
+
+                // 💡 NOVO: Pausa os vídeos de fundo
+                pauseFocusVideos();
             }
         }
 
@@ -3377,7 +3502,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
         function renderFocusHistory(history) {
             const list = document.getElementById('focus-history-list');
             if (!list) return;
-            list.innerHTML = '';
+            list.innerHTML = ''; // Limpa a lista
 
             if (history.length === 0) {
                 list.innerHTML = `
@@ -3391,19 +3516,63 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 
             const locale = 'pt-BR';
             history.forEach(item => {
+                // Cria o elemento principal do item
                 const el = document.createElement('div');
-                el.className = `p-2 ${COLORS.bgCard} rounded-md`;
+                // Adiciona 'group' e 'relative' para o efeito de hover no botão
+                el.className = `p-2 ${COLORS.bgCard} rounded-md group relative flex justify-between items-center`;
+                
                 const date = item.createdAt?.toDate ? item.createdAt.toDate().toLocaleString(locale, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '...';
 
+                // Define o HTML interno com o botão de exclusão
                 el.innerHTML = `
-                    <div class="flex justify-between items-center">
+                    <div>
                         <span class="font-medium text-sm">${item.taskTitle}</span>
-                        <span class="font-bold text-sm text-blue-400">${item.duration} min</span>
+                        <p class="text-xs ${COLORS.textSecondary}">${date}</p>
                     </div>
-                    <span class="text-xs ${COLORS.textSecondary}">${date}</span>
+                    <div class="flex items-center gap-2">
+                        <span class="font-bold text-sm text-blue-400 shrink-0">${item.duration} min</span>
+                        
+                        <button data-delete-id="${item.id}" class="p-1 text-zinc-500 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <i data-lucide="trash-2" class="w-3 h-3 pointer-events-none"></i>
+                        </button>
+                    </div>
                 `;
+
+                // Adiciona o event listener ao botão que acabamos de criar
+                el.querySelector(`[data-delete-id="${item.id}"]`).addEventListener('click', (e) => {
+                    e.stopPropagation(); // Impede que o clique se propague
+                    handleDeleteFocusHistory(item.id);
+                });
+
+                // Adiciona o item completo à lista no DOM
                 list.appendChild(el);
             });
+
+            // Renderiza os ícones do Lucide
+            if (typeof lucide !== 'undefined') {
+                lucide.createIcons();
+            }
+        }
+
+        async function handleDeleteFocusHistory(itemId) {
+            if (!userId) return;
+
+            // Pergunta ao usuário se ele tem certeza
+            const confirmed = await showConfirmModal('Excluir Registro?', 'Tem certeza que deseja excluir este registro de foco?');
+            
+            if (confirmed) {
+                try {
+                    // Cria a referência direta para o documento do histórico de foco
+                    const docRef = doc(db, `${getBasePath()}/focusHistory/${itemId}`);
+                    
+                    // Exclui o documento
+                    await deleteDoc(docRef);
+                    
+                } catch (error) {
+                    console.error("Erro ao excluir histórico de foco:", error);
+                    showModal("Erro", "Não foi possível excluir o registro.");
+                }
+            }
         }
 
 
@@ -3463,3 +3632,670 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
             nav.classList.add('-translate-x-full');
             overlay.classList.add('hidden');
         }
+
+        function renderTaskStatusSummary(allCombinedTasks) {
+            const summaryEl = document.getElementById('task-status-summary');
+            if (!summaryEl) return;
+            
+            summaryEl.innerHTML = ''; // Limpa o conteúdo de carregamento
+
+            const categories = {
+                // MODIFICAÇÃO 1: Trocamos as classes de 'color' por códigos hexadecimais em 'colorHex'
+                'main': { 
+                    name: 'Minhas Tarefas', 
+                    icon: 'check-square', 
+                    colorHex: '#3b82f6', // blue-500
+                    pending: 0, completed: 0, doing: 0 
+                },
+                'agency': { 
+                    name: 'Projetos (Agência)', 
+                    icon: 'folder-open', 
+                    colorHex: '#8b5cf6', // purple-500
+                    pending: 0, completed: 0, doing: 0 
+                },
+                'college': { 
+                    name: 'Faculdade (Disciplinas)', 
+                    icon: 'graduation-cap', 
+                    colorHex: '#22c55e', // green-500
+                    pending: 0, completed: 0, doing: 0 
+                },
+            };
+
+            allCombinedTasks.forEach(task => {
+                let categoryKey = 'main';
+                if (task.projectId) categoryKey = 'agency';
+                else if (task.subjectId) categoryKey = 'college';
+
+                const status = task.status || 'todo';
+                if (status === 'done') {
+                    categories[categoryKey].completed++;
+                } else if (status === 'doing') {
+                    categories[categoryKey].doing++;
+                } else if (status === 'todo' || status === 'overdue') {
+                    categories[categoryKey].pending++;
+                }
+            });
+
+            Object.keys(categories).forEach(key => {
+                const data = categories[key];
+                const total = data.pending + data.completed + data.doing;
+                const percentage = total > 0 ? Math.round((data.completed / total) * 100) : 0;
+                const pendingAndDoing = data.pending + data.doing;
+
+                // MODIFICAÇÃO 2: Usamos a variável 'colorHex' para criar estilos inline
+                
+                // Cor do ícone com 20% de opacidade (ex: #3b82f633)
+                const iconBgColor = `${data.colorHex}33`; 
+                
+                const cardHtml = `
+                    <div class="bg-zinc-700/50 p-5 rounded-xl border border-zinc-600 transition-all duration-300">
+                        <div class="flex items-center gap-3 mb-4">
+                            <div class="p-3 rounded-lg flex items-center justify-center" style="background-color: ${iconBgColor}">
+                                <i data-lucide="${data.icon}" class="w-6 h-6" style="color: ${data.colorHex}"></i>
+                            </div>
+                            <h4 class="text-lg font-semibold text-white">${data.name}</h4>
+                        </div>
+                        
+                        <div class="space-y-3">
+                            <button data-task-list-btn data-category="${key}" data-status="completed" ${data.completed === 0 ? 'disabled' : ''} 
+                                    class="w-full flex justify-between items-center text-sm p-3 rounded-lg hover:bg-zinc-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                                <span class="text-zinc-400 font-medium">Concluídas:</span>
+                                <span class="text-green-400 font-bold text-xl">${data.completed}</span>
+                            </button>
+                            <button data-task-list-btn data-category="${key}" data-status="pending" ${pendingAndDoing === 0 ? 'disabled' : ''} 
+                                    class="w-full flex justify-between items-center text-sm p-3 rounded-lg hover:bg-zinc-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                                <span class="text-zinc-400 font-medium">Pendentes/Em Progresso:</span>
+                                <span class="text-red-400 font-bold text-xl">${pendingAndDoing}</span>
+                            </button>
+                        </div>
+
+                        <div class="mt-4 pt-4 border-t border-zinc-600">
+                            <p class="text-sm font-medium text-zinc-300 mb-2">Progresso Geral (${total} total)</p>
+                            <div class="w-full bg-zinc-600 rounded-full h-3">
+                                <div class="h-3 rounded-full" style="background-color: ${data.colorHex}; width: ${percentage}%"></div>
+                            </div>
+                            <p class="text-xs text-zinc-400 mt-1 font-bold">${percentage}% Concluído</p>
+                        </div>
+                    </div>
+                `;
+                summaryEl.insertAdjacentHTML('beforeend', cardHtml);
+            });
+            
+            summaryEl.querySelectorAll('[data-task-list-btn]').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const category = btn.dataset.category;
+                    const status = btn.dataset.status;
+                    showTaskListModal(category, status, allCombinedTasks);
+                });
+            });
+
+            if (typeof lucide !== 'undefined') {
+                lucide.createIcons();
+            }
+        }
+
+        function showTaskListModal(category, status, allCombinedTasks) {
+            let title = '';
+
+            const categoryMap = {
+                'main': 'Minhas Tarefas',
+                'agency': 'Projetos (Agência)',
+                'college': 'Faculdade (Disciplinas)'
+            };
+            const statusMap = {
+                'pending': 'Pendentes/Em Progresso',
+                'completed': 'Concluídas'
+            };
+
+            title = `Tarefas ${statusMap[status]} - ${categoryMap[category]}`;
+
+            // 1. Filtra as tarefas pela categoria principal
+            const categoryTasks = allCombinedTasks.filter(task => {
+                let categoryMatch = false;
+                if (category === 'main' && !task.projectId && !task.subjectId) categoryMatch = true;
+                if (category === 'agency' && task.projectId) categoryMatch = true;
+                if (category === 'college' && task.subjectId) categoryMatch = true;
+                return categoryMatch;
+            });
+
+            // 2. Cria o HTML para a lista de tarefas
+            let contentHtml = '';
+
+            // Função auxiliar para criar o HTML de um item de tarefa
+            function _createTaskModalItemHTML(task) {
+                let subtext = 'Pessoal';
+                let taskType = 'main';
+                let extraData = '';
+
+                if (task.projectId) {
+                    subtext = `Agência: ${task.projectTitle || 'Projeto'}`;
+                    taskType = 'project';
+                    extraData = `data-project-id="${task.projectId}"`;
+                } else if (task.subjectId) {
+                    subtext = `Faculdade: ${task.subjectName || 'Disciplina'}`;
+                    taskType = 'subject';
+                    extraData = `data-subject-id="${task.subjectId}"`;
+                } else if (task.category) {
+                    subtext = `Pessoal: ${task.category}`;
+                }
+                
+                // BÔNUS: Adiciona a data de vencimento ao card
+                let dueDateHtml = '';
+                if (task.dueDate) {
+                    const today = new Date().toISOString().split('T')[0];
+                    const dueDate = task.dueDate;
+                    let dateColor = 'text-zinc-400';
+                    
+                    if (dueDate < today && task.status !== 'done') {
+                        dateColor = 'text-red-400 font-semibold'; // Atrasada
+                    } else if (dueDate === today && task.status !== 'done') {
+                        dateColor = 'text-yellow-400 font-semibold'; // Vence hoje
+                    }
+
+                    const formattedDate = new Date(dueDate + 'T12:00:00').toLocaleDateString('pt-BR', { day: 'numeric', month: 'short' });
+                    dueDateHtml = `<span class="text-xs ${dateColor} flex items-center gap-1 shrink-0 ml-2"><i data-lucide="calendar" class="w-3 h-3"></i> ${formattedDate}</span>`;
+                }
+
+                return `
+                    <button class="w-full text-left p-4 bg-zinc-700 rounded-lg hover:bg-zinc-600 transition-colors"
+                            data-task-modal-item data-task-type="${taskType}" data-task-id="${task.id}" ${extraData}>
+                        <div class="flex justify-between items-start">
+                            <p class="font-medium text-white mb-1 pr-2">${task.title}</p>
+                            ${dueDateHtml}
+                        </div>
+                        <p class="text-sm text-zinc-400 capitalize">${subtext}</p>
+                    </button>
+                `;
+            }
+
+            if (status === 'completed') {
+                // Se o usuário clicou em "Concluídas", mostra apenas a lista de concluídas
+                const completedTasks = categoryTasks
+                    .filter(t => t.status === 'done')
+                    .sort(sortTasksByDueDateAndCreation); // <-- ORDENAÇÃO APLICADA
+                
+                contentHtml += '<h3 class="text-xl font-semibold text-white mb-3 flex items-center gap-2"><i data-lucide="check-circle-2" class="w-5 h-5 text-green-400"></i> Concluído</h3><div class="space-y-3">';
+                
+                if (completedTasks.length === 0) {
+                    contentHtml += `<p class="text-zinc-400 text-center p-4">Nenhuma tarefa concluída.</p>`;
+                } else {
+                    completedTasks.forEach(task => {
+                        contentHtml += _createTaskModalItemHTML(task);
+                    });
+                }
+                contentHtml += '</div>';
+
+            } else if (status === 'pending') {
+                // Se o usuário clicou em "Pendentes/Em Progresso", divide em "A Fazer" e "Em Progresso"
+                
+                const todoTasks = categoryTasks
+                    .filter(t => (t.status || 'todo') === 'todo' || t.status === 'overdue')
+                    .sort(sortTasksByDueDateAndCreation); // <-- ORDENAÇÃO APLICADA
+
+                const doingTasks = categoryTasks
+                    .filter(t => t.status === 'doing')
+                    .sort(sortTasksByDueDateAndCreation); // <-- ORDENAÇÃO APLICADA
+
+                if (todoTasks.length === 0 && doingTasks.length === 0) {
+                    contentHtml += `<p class="text-zinc-400 text-center p-4">Nenhuma tarefa pendente ou em progresso.</p>`;
+                } else {
+                    // Seção "A Fazer"
+                    contentHtml += '<h3 class="text-xl font-semibold text-white mb-3 flex items-center gap-2"><i data-lucide="list" class="w-5 h-5 text-blue-400"></i> A Fazer</h3><div class="space-y-3 mb-6">';
+                    if (todoTasks.length === 0) {
+                        contentHtml += `<p class="text-zinc-400 text-center text-sm p-3">Nenhuma tarefa a fazer.</p>`;
+                    } else {
+                        todoTasks.forEach(task => {
+                            contentHtml += _createTaskModalItemHTML(task);
+                        });
+                    }
+                    contentHtml += '</div>';
+
+                    // Seção "Em Progresso"
+                    contentHtml += '<h3 class="text-xl font-semibold text-white mb-3 flex items-center gap-2"><i data-lucide="play-circle" class="w-5 h-5 text-yellow-400"></i> Em Progresso</h3><div class="space-y-3">';
+                    if (doingTasks.length === 0) {
+                        contentHtml += `<p class="text-zinc-400 text-center text-sm p-3">Nenhuma tarefa em progresso.</p>`;
+                    } else {
+                        doingTasks.forEach(task => {
+                            contentHtml += _createTaskModalItemHTML(task);
+                        });
+                    }
+                    contentHtml += '</div>';
+                }
+            }
+
+            // 3. Abre o painel slide-over
+            openSlideOver(contentHtml, title);
+            
+            // 4. Adiciona event listeners aos itens da lista que acabamos de criar
+            document.getElementById('slide-over-content').querySelectorAll('[data-task-modal-item]').forEach(item => {
+                item.addEventListener('click', () => {
+                    const type = item.dataset.taskType;
+                    const id = item.dataset.taskId;
+
+                    closeSlideOver();
+                    
+                    setTimeout(() => {
+                        if (type === 'main') {
+                            const task = allTasks.find(t => t.id === id);
+                            if (task) showTaskDetails(task.id);
+                        } else if (type === 'project') {
+                            const projectId = item.dataset.projectId;
+                            const task = allProjectTasks[projectId]?.find(t => t.id === id);
+                            if (task) {
+                                currentProjectId = projectId; 
+                                showProjectTaskDetails(task);
+                            }
+                        } else if (type === 'subject') {
+                            const subjectId = item.dataset.subjectId;
+                            const task = allSubjectTasks[subjectId]?.find(t => t.id === id);
+                            if (task) {
+                                currentSubjectId = subjectId; 
+                                showSubjectTaskDetails(task);
+                            }
+                        }
+                    }, 300);
+                });
+            });
+
+            // 5. Renderiza os ícones (Lucide)
+            if (typeof lucide !== 'undefined') {
+                lucide.createIcons();
+            }
+        }
+
+        function sortTasksByDueDateAndCreation(a, b) {
+            const dueDateA = a.dueDate;
+            const dueDateB = b.dueDate;
+            
+            // Regra 1: Tarefas com data de vencimento vêm antes das sem.
+            if (dueDateA && !dueDateB) {
+                return -1; // A (com data) vem antes.
+            }
+            if (!dueDateA && dueDateB) {
+                return 1; // B (com data) vem antes.
+            }
+
+            // Regra 2: Comparar datas de vencimento (se ambas tiverem)
+            if (dueDateA && dueDateB) {
+                // Adiciona 'T12:00:00' para garantir que a data seja lida corretamente
+                // sem problemas de fuso horário na comparação.
+                const dateA = new Date(dueDateA + 'T12:00:00');
+                const dateB = new Date(dueDateB + 'T12:00:00');
+                
+                if (dateA.getTime() !== dateB.getTime()) {
+                    return dateA.getTime() - dateB.getTime(); // Ascendente (data mais próxima vence primeiro)
+                }
+            }
+            
+            // Regra 3: Se as datas de vencimento forem iguais (ou ambas nulas), 
+            // ordenar por data de criação (mais antiga primeiro)
+            const createdAtA = a.createdAt?.toMillis() || 0;
+            const createdAtB = b.createdAt?.toMillis() || 0;
+            
+            return createdAtA - createdAtB; // Ascendente (primeiro criado vem primeiro)
+        }
+
+        function getWeekDates() {
+            const weekDates = {};
+            const today = new Date();
+            // O dia da semana (0=Dom, 1=Seg, ..., 6=Sab)
+            const currentDayOfWeek = today.getDay(); 
+            
+            // Se for 0 (Domingo), trata como 7 para o cálculo do offset
+            const day = currentDayOfWeek === 0 ? 7 : currentDayOfWeek;
+            // Offset para segunda-feira. Ex: Quarta (3) -> 3-1=2. today.date - 2 = Segunda.
+            const offsetToMonday = day - 1; 
+            
+            const monday = new Date(today);
+            monday.setDate(today.getDate() - offsetToMonday);
+
+            const days = ['seg', 'ter', 'qua', 'qui', 'sex'];
+            const dayLabels = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta'];
+
+            for (let i = 0; i < 5; i++) {
+                const currentDate = new Date(monday);
+                currentDate.setDate(monday.getDate() + i);
+                
+                // Formata a data como "05/11"
+                const dateStr = currentDate.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+                const key = days[i];
+                const label = dayLabels[i];
+                
+                weekDates[key] = { label: label, date: dateStr };
+            }
+            return weekDates;
+        }
+
+        /**
+         * Função genérica para renderizar um grid de cronograma (cabeçalho e corpo).
+         */
+        function renderScheduleGrid(headId, bodyId, subjects) {
+            const scheduleHead = document.getElementById(headId);
+            const scheduleBody = document.getElementById(bodyId);
+            
+            if (!scheduleHead || !scheduleBody) return;
+
+            const weekDates = getWeekDates();
+            
+            // 1. Renderiza o Cabeçalho (thead) com as datas
+            scheduleHead.innerHTML = ''; // Limpa o cabeçalho antigo
+            const headTr = document.createElement('tr');
+            
+            let headHtml = `
+                <th class="w-1/6 p-4 text-left text-sm font-semibold text-zinc-300 whitespace-nowrap">
+                    <div class="flex items-center gap-2">
+                        <i data-lucide="clock" class="w-4 h-4"></i>
+                        Horário
+                    </div>
+                </th>
+            `;
+            
+            scheduleDays.forEach(day => { // scheduleDays = ['seg', 'ter', ...]
+                const dayInfo = weekDates[day];
+                headHtml += `
+                    <th class="w-1/6 p-4 text-left text-sm font-semibold text-zinc-300 whitespace-nowrap">
+                        <div class="flex items-center gap-2">
+                            <i data-lucide="calendar" class="w-4 h-4"></i>
+                            ${dayInfo.label}
+                        </div>
+                        <div class="text-xs text-zinc-400 mt-1 ml-6">${dayInfo.date}</div>
+                    </th>
+                `;
+            });
+            
+            headTr.innerHTML = headHtml;
+            scheduleHead.appendChild(headTr);
+
+            // 2. Renderiza o Corpo (tbody) - Lógica que já existia
+            scheduleBody.innerHTML = '';
+            const grid = {};
+            scheduleTimeSlots.forEach(time => {
+                grid[time] = {};
+                scheduleDays.forEach(day => {
+                    grid[time][day] = [];
+                });
+            });
+
+            subjects.forEach(subject => {
+                if (subject.schedule) {
+                    scheduleDays.forEach(day => {
+                        if (subject.schedule[day] && Array.isArray(subject.schedule[day])) {
+                            subject.schedule[day].forEach(timeSlot => {
+                                if (grid[timeSlot] && grid[timeSlot][day]) {
+                                    grid[timeSlot][day].push({ name: subject.name, id: subject.id });
+                                }
+                            });
+                        }
+                    });
+                }
+            });
+
+            scheduleTimeSlots.forEach(time => {
+                const tr = document.createElement('tr');
+                tr.className = "divide-x divide-zinc-700/50";
+                let rowHtml = `<td class="p-3 text-sm font-medium ${COLORS.textSecondary}">${time}</td>`;
+
+                scheduleDays.forEach(day => {
+                    const subjectsInSlot = grid[time][day];
+                    const cellContent = subjectsInSlot.map(sub => {
+                        const subjectIndex = allSubjects.findIndex(s => s.id === sub.id); 
+                        const color = subjectColorPalette[subjectIndex % subjectColorPalette.length] || subjectColorPalette[0];
+                        return `<div data-subject-id="${sub.id}"
+                                    class="${color.bg} ${color.hover} text-white text-xs font-medium p-2 rounded-md mb-1 cursor-pointer">
+                                    ${sub.name}
+                                </div>`;
+                    }).join('');
+                    rowHtml += `<td class="p-2 text-sm align-top h-24">${cellContent}</td>`;
+                });
+                tr.innerHTML = rowHtml;
+                scheduleBody.appendChild(tr);
+            });
+
+            // 3. Adiciona listeners de clique
+            scheduleBody.querySelectorAll('[data-subject-id]').forEach(el => {
+                el.addEventListener('click', () => {
+                    showSubjectDetailPage(el.dataset.subjectId);
+                });
+            });
+
+            // 4. Renderiza os ícones (Lucide)
+            if (typeof lucide !== 'undefined') {
+                lucide.createIcons();
+            }
+        }
+
+
+        function initAudioContext() {
+    if (!audioContext) {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    }
+}
+
+/**
+ * Atualiza a UI do player (título, artista, botões).
+ */
+function updatePlayerUI() {
+    const track = musicTracks[currentTrackIndex];
+    document.getElementById('player-track-title').textContent = track.title;
+    document.getElementById('player-track-artist').textContent = track.artist;
+
+    const togglePlayBtn = document.getElementById('player-toggle-play');
+    if (togglePlayBtn) {
+        togglePlayBtn.innerHTML = `<i data-lucide="${isPlaying ? 'pause' : 'play'}" class="w-4 h-4"></i>`;
+        togglePlayBtn.classList.toggle('playing', isPlaying);
+    }
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+}
+
+/**
+ * Carrega uma música via Fetch API e decodifica o áudio.
+ */
+async function loadTrack(index) {
+    initAudioContext(); // Garante que o contexto esteja inicializado
+    currentTrackIndex = index;
+    const track = musicTracks[currentTrackIndex];
+
+    if (!track || !track.src) {
+        console.error("Faixa de música não encontrada ou URL inválido.");
+        return;
+    }
+
+    updatePlayerUI(); // Atualiza a UI com a nova faixa antes mesmo de carregar
+
+    try {
+        const response = await fetch(track.src);
+        const arrayBuffer = await response.arrayBuffer();
+        currentAudioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+        document.getElementById('player-duration').textContent = formatTime(currentAudioBuffer.duration);
+
+        // Se já estiver no modo de play, inicia automaticamente após o carregamento
+        if (isPlaying) { 
+            playTrack();
+        }
+    } catch (error) {
+        console.error("Erro ao carregar ou decodificar a faixa de áudio:", error);
+        showToast("Erro ao carregar música.", "error");
+    }
+}
+
+/**
+ * Toca a faixa carregada a partir da posição atual.
+ */
+function playTrack() {
+    if (!audioContext || !currentAudioBuffer) {
+        console.warn("Nenhum contexto de áudio ou buffer disponível.");
+        isPlaying = false; // Garante que o estado está correto
+        updatePlayerUI();
+        return;
+    }
+
+    // Se já houver uma fonte tocando, para-a
+    if (currentAudioSource) {
+        currentAudioSource.stop();
+        currentAudioSource.disconnect();
+    }
+
+    currentAudioSource = audioContext.createBufferSource();
+    currentAudioSource.buffer = currentAudioBuffer;
+    currentAudioSource.connect(audioContext.destination);
+    currentAudioSource.loop = true; // 💡 Loop infinito para música de foco
+
+    // Inicia do ponto onde parou ou do início se for a primeira vez
+    currentAudioSource.start(0, currentPlaybackTime % currentAudioBuffer.duration); 
+    startTime = audioContext.currentTime - currentPlaybackTime; // Ajusta o startTime
+
+    isPlaying = true;
+    updatePlayerUI();
+    updateProgressBar(); // Inicia a atualização da barra
+
+    currentAudioSource.onended = () => {
+        if (currentAudioSource.loop) {
+            // Se estiver em loop, não faz nada no onended (ele continua)
+        } else {
+            // Se não estiver em loop e a música terminar, avança para a próxima
+            nextTrack(); 
+        }
+    };
+}
+
+/**
+ * Pausa a faixa e registra o tempo atual.
+ */
+function pauseTrack() {
+    if (currentAudioSource) {
+        currentAudioSource.stop();
+        currentAudioSource.disconnect();
+        cancelAnimationFrame(animationFrameId); // Para a atualização da barra
+        currentPlaybackTime = audioContext.currentTime - startTime; // Salva a posição
+    }
+    isPlaying = false;
+    updatePlayerUI();
+}
+
+/**
+ * Alterna entre play/pause.
+ */
+function togglePlayPause() {
+    initAudioContext(); // Garante que o contexto esteja ativo na interação
+    if (isPlaying) {
+        pauseTrack();
+    } else {
+        // Se não houver buffer, carrega a primeira faixa e depois toca
+        if (!currentAudioBuffer) {
+            loadTrack(currentTrackIndex).then(() => {
+                if (currentAudioBuffer) playTrack();
+            });
+        } else {
+            playTrack();
+        }
+    }
+}
+
+function nextTrack() {
+        // Incrementa o índice
+        currentTrackIndex++;
+        // Se passar do fim da lista, volta para o início
+        if (currentTrackIndex >= musicTracks.length) {
+            currentTrackIndex = 0;
+        }
+        
+        // Carrega e toca a próxima música
+        loadTrack(currentTrackIndex).then(() => {
+            if (isPlaying) {
+                playTrack();
+            }
+        });
+    }
+
+    function previousTrack() {
+        // Decrementa o índice
+        currentTrackIndex--;
+        // Se passar do início, vai para o fim da lista
+        if (currentTrackIndex < 0) {
+            currentTrackIndex = musicTracks.length - 1;
+        }
+        
+        // Carrega e toca a música anterior
+        loadTrack(currentTrackIndex).then(() => {
+            if (isPlaying) {
+                playTrack();
+            }
+        });
+    }
+
+/**
+ * Formata o tempo em MM:SS.
+ */
+function formatTime(seconds) {
+    const min = Math.floor(seconds / 60);
+    const sec = Math.floor(seconds % 60);
+    return `${min}:${sec < 10 ? '0' : ''}${sec}`;
+}
+
+/**
+ * Atualiza a barra de progresso visualmente.
+ */
+function updateProgressBar() {
+    if (!isPlaying || !currentAudioBuffer || !audioContext) {
+        cancelAnimationFrame(animationFrameId);
+        return;
+    }
+
+    const elapsedTime = audioContext.currentTime - startTime;
+    const duration = currentAudioBuffer.duration;
+    let progress = (elapsedTime / duration);
+
+    if (progress >= 1) { // Lida com o loop
+        progress = progress % 1; // Reseta para calcular o progresso no novo loop
+        startTime = audioContext.currentTime - (progress * duration); // Reajusta startTime
+    }
+
+    const progressBar = document.getElementById('player-progress-bar');
+    if (progressBar) {
+        progressBar.style.width = `${(progress * 100).toFixed(2)}%`;
+        document.getElementById('player-current-time').textContent = formatTime(elapsedTime);
+    }
+
+    animationFrameId = requestAnimationFrame(updateProgressBar);
+}
+
+// Armazena a preferência de fundo
+    let currentFocusBackground = 'none';
+
+    function setFocusBackground(bgId) {
+        currentFocusBackground = bgId; // Salva a preferência
+        
+        // Esconde todos os fundos
+        document.querySelectorAll('.focus-bg').forEach(el => {
+            el.classList.remove('active');
+            if (el.tagName === 'VIDEO') {
+                el.pause(); // Pausa todos os vídeos
+            }
+        });
+
+        // Atualiza os botões seletores
+        document.querySelectorAll('.bg-selector-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.bg === bgId);
+        });
+
+        if (bgId === 'none') {
+            return; // Se for 'none', apenas para por aqui
+        }
+
+        // Mostra o fundo selecionado
+        const bgElement = document.querySelector(`.focus-bg[data-bg-id="${bgId}"]`);
+        if (bgElement) {
+            bgElement.classList.add('active');
+            if (bgElement.tagName === 'VIDEO') {
+                bgElement.play().catch(e => console.warn("Autoplay do vídeo bloqueado"));
+            }
+        }
+    }
+
+    function pauseFocusVideos() {
+        document.querySelectorAll('.focus-bg').forEach(el => {
+            if (el.tagName === 'VIDEO') {
+                el.pause();
+            }
+        });
+    }

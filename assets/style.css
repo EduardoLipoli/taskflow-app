@@ -250,3 +250,220 @@
                 filter: drop-shadow(0 0 15px #dc2626);
             }
         }
+
+        .sortable-drag {
+            z-index: 9999 !important; 
+            opacity: 1 !important; 
+            background-color: var(--fc-page-bg-color, #27272a) !important; 
+            box-shadow: 0 15px 30px rgba(0, 0, 0, 0.5), 0 5px 15px rgba(0, 0, 0, 0.4);
+            transition: all 0.2s cubic-bezier(0.25, 0.8, 0.25, 1);
+        }
+        .bg-zinc-800 .p-4 .border-b {
+            position: relative;
+            z-index: 10;
+        }
+        .kanban-column-header {
+            position: relative;
+            z-index: 1;
+        }
+        .task-card {
+            cursor: grab;
+        }
+        .sortable-drag {
+            cursor: grabbing !important;
+        }
+
+        .kanban-ghost-effect {
+            opacity: 0.2; 
+            border: 2px dashed #3b82f6;
+            background-color: transparent !important; 
+            transition: all 0.3s ease-in-out;
+        }
+
+        #kanban-overdue, 
+        #kanban-todo, 
+        #kanban-doing, 
+        #kanban-done,
+        #project-kanban-todo,
+        #project-kanban-doing,
+        #project-kanban-done,
+        #subject-kanban-todo,
+        #subject-kanban-doing,
+        #subject-kanban-done {
+            scroll-behavior: smooth; 
+        }
+
+        -webkit-overflow-scrolling: touch;
+
+#pomodoro-visual-circle::before,
+.pomodoro-running-animation,
+.pomodoro-running-animation-text {
+    animation: none;
+    content: none;
+}
+@keyframes pulse-aura { /* remove a keyframe antiga */ }
+@keyframes pulse-pomodoro-text { /* remove a keyframe antiga */ }
+
+
+/* 💡 NOVO: Estilo para a trilha de fundo do SVG */
+.pomodoro-progress-bg {
+    fill: none;
+    /* Cor da trilha (um branco/cinza bem sutil) */
+    stroke: rgba(255, 255, 255, 0.1); 
+}
+
+/* 💡 NOVO: Estilo para a barra de progresso que "enche" */
+.pomodoro-progress-bar {
+    fill: none;
+    stroke: #ffffff; /* Cor da barra (branco/azul claro) */
+    stroke-linecap: round; /* Pontas arredondadas */
+    
+    /* Gira o círculo para começar no topo (12 horas) */
+    transform-origin: center;
+    transform: rotate(-90deg);
+    
+    /* Esta é a mágica! A transição suave de 1s */
+    transition: stroke-dashoffset 1s linear;
+}
+
+#custom-music-player.active {
+    /* Move o player para a posição visível */
+    transform: translateX(0);
+    opacity: 1;
+}
+
+/* Ajustes para o botão de play/pause */
+#player-toggle-play svg {
+    transition: transform 0.2s ease-in-out;
+}
+
+#player-toggle-play.playing svg.lucide-play {
+    display: none;
+}
+
+#player-toggle-play:not(.playing) svg.lucide-pause {
+    display: none;
+}
+
+
+.player-controls {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem; /* 8px */
+}
+
+.player-controls button {
+    background-color: transparent;
+    border: none;
+    color: #d4d4d8; /* text-zinc-300 */
+    cursor: pointer;
+    border-radius: 9999px;
+    padding: 0.5rem; /* p-2 */
+    transition: background-color 0.2s;
+}
+
+.player-controls button:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+/* Oculta o ícone de 'play' quando 'playing' está ativo */
+#player-toggle-play.playing svg.lucide-play {
+    display: none;
+}
+/* Oculta o ícone de 'pause' quando 'playing' NÃO está ativo */
+#player-toggle-play:not(.playing) svg.lucide-pause {
+    display: none;
+}
+
+/* --- Estilos do Plano de Fundo (Modo Foco) --- */
+
+/* Container para os fundos */
+#focus-bg-container {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 10; /* Fica atrás do conteúdo */
+    overflow: hidden;
+}
+
+/* Estilo comum para todos os fundos (vídeo/imagem) */
+.focus-bg {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover; /* Cobre toda a tela */
+    z-index: 1;
+    opacity: 0; /* Começa invisível */
+    transition: opacity 0.5s ease-in-out;
+}
+
+/* Estilo para o fundo ativo */
+.focus-bg.active {
+    opacity: 0.3; /* <<< AJUSTE A OPACIDADE AQUI (0.3 = 30%) */
+    filter: blur(3px);
+    transform: scale(1.05); 
+    
+    transition: opacity 0.5s ease-in-out;
+}
+
+/* Overlay escuro para melhorar a leitura */
+#focus-bg-container::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.3); /* Escurece um pouco */
+    z-index: 2;
+}
+
+/* Container para o CONTEÚDO (para ficar na frente) */
+#focus-content-wrapper {
+    position: relative;
+    z-index: 20; /* Fica na frente do fundo */
+    /* Isso garante que o conteúdo centralize */
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+}
+
+/* Seletor de plano de fundo */
+#bg-selector {
+    position: absolute;
+    top: 1.5rem; /* top-6 */
+    left: 1.5rem; /* left-6 */
+    z-index: 30; /* Fica na frente de tudo */
+    display: flex;
+    gap: 0.5rem; /* gap-2 */
+    padding: 0.5rem; /* p-2 */
+    background-color: rgba(39, 39, 42, 0.7); /* bg-zinc-800/70 */
+    backdrop-filter: blur(8px);
+    border-radius: 0.75rem; /* rounded-xl */
+}
+
+.bg-selector-btn {
+    width: 2.5rem; /* w-10 */
+    height: 2.5rem; /* h-10 */
+    border-radius: 0.5rem; /* rounded-lg */
+    border: 2px solid transparent;
+    cursor: pointer;
+    opacity: 0.6;
+    transition: all 0.2s;
+    background-size: cover;
+    background-position: center;
+}
+
+.bg-selector-btn:hover {
+    opacity: 1;
+}
+
+.bg-selector-btn.active {
+    opacity: 1;
+    border-color: #3b82f6; /* border-blue-500 */
+}
