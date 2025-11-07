@@ -10,7 +10,8 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
             signInAnonymously,
             signInWithCustomToken,
             setPersistence,
-            browserSessionPersistence
+            browserSessionPersistence,
+            browserLocalPersistence
         } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
         import {
             getFirestore,
@@ -69,6 +70,8 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 
         let modalResolve = null;
         let automationRunning = false;
+        let alarmAudioContext;
+        let sentAlarmsForToday = [];
 
         // 💡 SUBTITUÍDO: Novas músicas (exemplo) e variáveis do player
         const musicTracks = [
@@ -136,9 +139,6 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 
                 setupUIEventListeners();
 
-
-                await setPersistence(auth, browserSessionPersistence);
-
                 onAuthStateChanged(auth, async (user) => {
                     const loadingScreen = document.getElementById('loading-screen');
                     const loginScreen = document.getElementById('login-screen');
@@ -167,7 +167,8 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 
 
                         await loadInitialData();
-
+                        if (window.classAlarmInterval) clearInterval(window.classAlarmInterval);
+                        window.classAlarmInterval = setInterval(checkClassAlarms, 60000);
                         loadingScreen.classList.add('hidden');
                         appWrapper.classList.remove('hidden');
                         appWrapper.classList.add('flex');
@@ -180,7 +181,8 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
                         }
 
                     } else {
-
+                        
+                        if (window.classAlarmInterval) clearInterval(window.classAlarmInterval);
                         userId = null;
                         if (unsubscribeTasks) unsubscribeTasks();
                         if (unsubscribeAgency) unsubscribeAgency();
@@ -350,7 +352,11 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 
         async function signInWithGoogle() {
             const provider = new GoogleAuthProvider();
+            const rememberMe = document.getElementById('login-remember-me').checked;
+            const persistence = rememberMe ? browserLocalPersistence : browserSessionPersistence;
             try {
+                await setPersistence(auth, persistence);
+                await signInWithPopup(auth, provider);
                 await signInWithPopup(auth, provider);
             } catch (error) {
                 console.error("Erro no login com Google:", error);
@@ -362,7 +368,11 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
             e.preventDefault();
             const email = document.getElementById('login-email').value;
             const pass = document.getElementById('login-password').value;
+            const rememberMe = document.getElementById('login-remember-me').checked;
+            const persistence = rememberMe ? browserLocalPersistence : browserSessionPersistence;
             try {
+                await setPersistence(auth, persistence);
+                await signInWithEmailAndPassword(auth, email, pass);
                 await signInWithEmailAndPassword(auth, email, pass);
             } catch (error) {
                 console.error("Erro no login com email:", error);
@@ -1199,6 +1209,57 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
             automationRunning = false;
         }
 
+        function checkClassAlarms() {
+            // Se os dados das disciplinas ainda não carregaram, não faz nada
+            if (!allSubjects || allSubjects.length === 0) return;
+
+            const now = new Date();
+            const currentDay = dayOfWeekMap[now.getDay()]; // 'seg', 'ter', etc. (mapa já existe no seu código)
+            const currentTime = now.getHours().toString().padStart(2, '0') + ":" + now.getMinutes().toString().padStart(2, '0'); // Formato "HH:MM"
+
+            // Limpa o rastreador de alarmes à meia-noite
+            if (currentTime === "00:00") {
+                sentAlarmsForToday = [];
+            }
+
+            // Itera sobre todas as disciplinas
+            allSubjects.forEach(subject => {
+                // Verifica se a disciplina tem aulas hoje
+                if (subject.schedule && subject.schedule[currentDay]) {
+                    
+                    // Itera sobre os horários de hoje (ex: "19:00 - 20:10")
+                    subject.schedule[currentDay].forEach(timeSlot => {
+                        const startTime = timeSlot.split(' - ')[0]; // Pega apenas a hora de início "19:00"
+                        
+                        // Cria uma ID única para este alarme (ex: "disciplinaID-seg-19:00")
+                        const alarmId = `${subject.id}-${currentDay}-${startTime}`;
+
+                        // Se a hora atual for a hora de início E o alarme ainda não foi enviado hoje
+                        if (currentTime === startTime && !sentAlarmsForToday.includes(alarmId)) {
+                            
+                            console.log(`ALARME: Disparando para ${subject.name} às ${startTime}`);
+                            
+                            // 1. Envia notificação Desktop (se o usuário permitiu)
+                            if (Notification.permission === 'granted') {
+                                new Notification('Sua aula está começando!', {
+                                    body: `Aula de "${subject.name}" (${startTime}).`,
+                                    icon: 'assets/checklist.ico' // Ícone da sua aplicação
+                                });
+                            }
+                            
+                            // 2. Adiciona notificação interna (no "sininho")
+                            addNotification(`Sua aula de "${subject.name}" está começando agora (${startTime}).`, 'dueToday');
+                            
+                            // 3. Toca o som
+                            playClassAlarmSound();
+                            
+                            // 4. Marca como enviado para não disparar novamente hoje
+                            sentAlarmsForToday.push(alarmId);
+                        }
+                    });
+                }
+            });
+        }
 
         function renderKanbanTasks(tasks) {
             const columns = {
@@ -4299,3 +4360,33 @@ function updateProgressBar() {
             }
         });
     }
+
+    function playClassAlarmSound() {
+            // Inicializa o contexto de áudio se ainda não existir
+            if (!alarmAudioContext) {
+                try {
+                    alarmAudioContext = new (window.AudioContext || window.webkitAudioContext)();
+                } catch (e) {
+                    console.warn("Web Audio API não suportada.", e);
+                    return; // Não pode tocar som
+                }
+            }
+            
+            try {
+                const oscillator = alarmAudioContext.createOscillator();
+                const gainNode = alarmAudioContext.createGain();
+                oscillator.connect(gainNode);
+                gainNode.connect(alarmAudioContext.destination);
+                
+                oscillator.type = 'triangle'; // Um som de alarme mais suave
+                oscillator.frequency.setValueAtTime(880, alarmAudioContext.currentTime); // Frequência (A5)
+                gainNode.gain.setValueAtTime(0.4, alarmAudioContext.currentTime); // Volume
+                oscillator.start(alarmAudioContext.currentTime);
+                
+                // Toca por 1 segundo
+                gainNode.gain.exponentialRampToValueAtTime(0.00001, alarmAudioContext.currentTime + 1.0);
+                oscillator.stop(alarmAudioContext.currentTime + 1.0);
+            } catch (e) {
+                console.warn("Não foi possível tocar o som de alarme.", e);
+            }
+        }
