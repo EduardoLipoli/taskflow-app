@@ -437,7 +437,9 @@ function setupUIEventListeners() {
     .getElementById("mobile-menu-overlay")
     .addEventListener("click", closeMobileMenu);
 
-  document.getElementById('btn-show-import-topics-modal').addEventListener('click', showImportTopicsForm);
+  document
+    .getElementById("btn-show-import-topics-modal")
+    .addEventListener("click", showImportTopicsForm);
 
   const btnRequestNotif = document.getElementById(
     "btn-request-notification-permission"
@@ -907,17 +909,20 @@ async function loadInitialData() {
     (error) => console.error("Erro ao carregar projetos da agência:", error)
   );
 
-const subjectsQuery = query(getSubjectsCollection(), orderBy('createdAt', 'asc')); // <--- MUDANÇA AQUI
-unsubscribeSubjects = onSnapshot(
+  const subjectsQuery = query(
+    getSubjectsCollection(),
+    orderBy("createdAt", "asc")
+  ); // <--- MUDANÇA AQUI
+  unsubscribeSubjects = onSnapshot(
     subjectsQuery,
     (snapshot) => {
-        allSubjects = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+      allSubjects = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
 
-        renderCollegeSubjects(allSubjects);
-        renderCollegeSchedule(allSubjects);
-        renderDashboardSchedule(allSubjects);
-        updateCalendar();
-        updateCollegeStats(allSubjects, allSubjectTasks);
+      renderCollegeSubjects(allSubjects);
+      renderCollegeSchedule(allSubjects);
+      renderDashboardSchedule(allSubjects);
+      updateCalendar();
+      updateCollegeStats(allSubjects, allSubjectTasks);
 
       allSubjectTasks = {};
       allSubjects.forEach((subject) => {
@@ -4749,7 +4754,7 @@ function loadSubjectData(subjectId) {
 
   const topicsQuery = query(
     getSubjectTopicsCollection(subjectId),
-    orderBy('createdAt', 'asc')
+    orderBy("createdAt", "asc")
   );
   unsubscribeSubjectItems.topics = onSnapshot(topicsQuery, (snapshot) => {
     const items = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
@@ -4847,58 +4852,70 @@ function renderSubjectList(items, listId, emptyText, toggleFn, deleteFn) {
 }
 
 function renderSubjectTopicsList(items) {
-    const listElement = document.getElementById('subject-topics-list');
-    listElement.innerHTML = '';
+  const listElement = document.getElementById("subject-topics-list");
+  listElement.innerHTML = "";
 
-    if (items.length === 0) {
-        listElement.innerHTML = `<li class="text-zinc-500 text-sm p-4 text-center">Nenhum tópico cadastrado</li>`;
-        return;
-    }
+  if (items.length === 0) {
+    listElement.innerHTML = `<li class="text-zinc-500 text-sm p-4 text-center">Nenhum tópico cadastrado</li>`;
+    return;
+  }
 
-    items.forEach(item => {
-        const hasSubtasks = item.subtasks && item.subtasks.length > 0;
-        
-        // Conta quantos estão feitos para mostrar um resumo quando fechado (Ex: 2/5)
-        const totalSub = item.subtasks ? item.subtasks.length : 0;
-        const doneSub = item.subtasks ? item.subtasks.filter(s => s.completed).length : 0;
-        const progressBadge = hasSubtasks 
-            ? `<span class="text-xs text-zinc-500 ml-auto mr-2 font-mono">[${doneSub}/${totalSub}]</span>` 
-            : '';
+  items.forEach((item) => {
+    const hasSubtasks = item.subtasks && item.subtasks.length > 0;
 
-        const parentCheckboxClass = hasSubtasks ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer';
-        
-        // IDs únicos para controle de abrir/fechar
-        const contentId = `topic-content-${item.id}`;
-        const chevronId = `topic-chevron-${item.id}`;
+    // Conta quantos estão feitos para mostrar um resumo quando fechado (Ex: 2/5)
+    const totalSub = item.subtasks ? item.subtasks.length : 0;
+    const doneSub = item.subtasks
+      ? item.subtasks.filter((s) => s.completed).length
+      : 0;
+    const progressBadge = hasSubtasks
+      ? `<span class="text-xs text-zinc-500 ml-auto mr-2 font-mono">[${doneSub}/${totalSub}]</span>`
+      : "";
 
-        const li = document.createElement('li');
-        // Mudamos o estilo para parecer um "cartão" fechado
-        li.className = `flex flex-col ${COLORS.bgCard} rounded-md border border-zinc-700/50 overflow-hidden transition-all duration-200`;
-        
-        // --- HTML DAS SUBTAREFAS (Escondido por padrão) ---
-        let subtasksHtml = '';
-        if (hasSubtasks) {
-            subtasksHtml = `<ul class="space-y-1 border-l-2 border-zinc-700 ml-2 pl-3 my-2">`;
-            item.subtasks.forEach((sub, idx) => {
-                subtasksHtml += `
+    const parentCheckboxClass = hasSubtasks
+      ? "opacity-60 cursor-not-allowed"
+      : "cursor-pointer";
+
+    // IDs únicos para controle de abrir/fechar
+    const contentId = `topic-content-${item.id}`;
+    const chevronId = `topic-chevron-${item.id}`;
+
+    const li = document.createElement("li");
+    // Mudamos o estilo para parecer um "cartão" fechado
+    li.className = `flex flex-col ${COLORS.bgCard} rounded-md border border-zinc-700/50 overflow-hidden transition-all duration-200`;
+
+    // --- HTML DAS SUBTAREFAS (Escondido por padrão) ---
+    let subtasksHtml = "";
+    if (hasSubtasks) {
+      subtasksHtml = `<ul class="space-y-1 border-l-2 border-zinc-700 ml-2 pl-3 my-2">`;
+      item.subtasks.forEach((sub, idx) => {
+        subtasksHtml += `
                     <li class="flex items-center justify-between group py-1">
                         <div class="flex items-center gap-3">
-                            <input type="checkbox" data-parent-id="${item.id}" data-sub-idx="${idx}" 
+                            <input type="checkbox" data-parent-id="${
+                              item.id
+                            }" data-sub-idx="${idx}" 
                                 class="subtask-checkbox form-checkbox bg-zinc-800 border-zinc-500 rounded text-blue-500 focus:ring-blue-500 w-4 h-4 cursor-pointer" 
-                                ${sub.completed ? 'checked' : ''}>
-                            <span class="text-sm ${sub.completed ? 'line-through text-zinc-500' : 'text-zinc-300'}">${sub.text}</span>
+                                ${sub.completed ? "checked" : ""}>
+                            <span class="text-sm ${
+                              sub.completed
+                                ? "line-through text-zinc-500"
+                                : "text-zinc-300"
+                            }">${sub.text}</span>
                         </div>
-                        <button data-parent-id="${item.id}" data-sub-idx="${idx}" class="btn-delete-subtask opacity-0 group-hover:opacity-100 text-zinc-600 hover:text-red-500 transition-opacity p-1">
+                        <button data-parent-id="${
+                          item.id
+                        }" data-sub-idx="${idx}" class="btn-delete-subtask opacity-0 group-hover:opacity-100 text-zinc-600 hover:text-red-500 transition-opacity p-1">
                             <i data-lucide="x" class="w-3 h-3"></i>
                         </button>
                     </li>
                 `;
-            });
-            subtasksHtml += `</ul>`;
-        }
+      });
+      subtasksHtml += `</ul>`;
+    }
 
-        // --- FORMULÁRIO DE ADICIONAR (Escondido por padrão) ---
-        const addSubtaskUI = `
+    // --- FORMULÁRIO DE ADICIONAR (Escondido por padrão) ---
+    const addSubtaskUI = `
             <div class="mt-3 pt-2 border-t border-zinc-700/50">
                 <form data-parent-id="${item.id}" class="form-add-subtask flex gap-2">
                     <input type="text" placeholder="Nova etapa..." class="flex-1 bg-zinc-800 border border-zinc-600 rounded px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500">
@@ -4909,9 +4926,9 @@ function renderSubjectTopicsList(items) {
             </div>
         `;
 
-        // --- CABEÇALHO (Sempre visível) ---
-        // Adicionamos um botão de Chevron (Seta) na esquerda
-        li.innerHTML = `
+    // --- CABEÇALHO (Sempre visível) ---
+    // Adicionamos um botão de Chevron (Seta) na esquerda
+    li.innerHTML = `
             <div class="flex items-center justify-between w-full p-3 hover:bg-zinc-700/30 transition-colors">
                 <div class="flex items-center gap-3 flex-1 overflow-hidden">
                     
@@ -4922,16 +4939,22 @@ function renderSubjectTopicsList(items) {
 
                     <input type="checkbox" data-id="${item.id}" 
                         class="topic-checkbox form-checkbox bg-zinc-800 border-zinc-500 rounded text-green-500 focus:ring-green-500 w-5 h-5 shrink-0 ${parentCheckboxClass}" 
-                        ${item.completed ? 'checked' : ''} 
-                        ${hasSubtasks ? 'disabled' : ''}>
+                        ${item.completed ? "checked" : ""} 
+                        ${hasSubtasks ? "disabled" : ""}>
                     
-                    <span class="font-medium truncate ${item.completed ? 'line-through text-zinc-500' : 'text-zinc-200'} select-none" 
+                    <span class="font-medium truncate ${
+                      item.completed
+                        ? "line-through text-zinc-500"
+                        : "text-zinc-200"
+                    } select-none" 
                           title="${item.text}">${item.text}</span>
                 </div>
 
                 <div class="flex items-center">
                     ${progressBadge}
-                    <button data-id="${item.id}" class="btn-delete-item text-zinc-500 hover:text-red-500 p-1 ml-2">
+                    <button data-id="${
+                      item.id
+                    }" class="btn-delete-item text-zinc-500 hover:text-red-500 p-1 ml-2">
                         <i data-lucide="trash-2" class="w-4 h-4 pointer-events-none"></i>
                     </button>
                 </div>
@@ -4943,76 +4966,92 @@ function renderSubjectTopicsList(items) {
             </div>
         `;
 
-        // --- LISTENERS ---
+    // --- LISTENERS ---
 
-        // 1. Lógica de Abrir/Fechar (Accordion)
-        const toggleBtn = li.querySelector('.btn-toggle-topic');
-        toggleBtn.addEventListener('click', (e) => {
-            e.stopPropagation(); // Impede cliques indesejados
-            const content = document.getElementById(contentId);
-            const chevron = document.getElementById(chevronId);
-            
-            // Alterna visibilidade
-            content.classList.toggle('hidden');
-            
-            // Gira a setinha
-            if (content.classList.contains('hidden')) {
-                chevron.style.transform = 'rotate(0deg)';
-            } else {
-                chevron.style.transform = 'rotate(90deg)';
-            }
-        });
+    // 1. Lógica de Abrir/Fechar (Accordion)
+    const toggleBtn = li.querySelector(".btn-toggle-topic");
+    toggleBtn.addEventListener("click", (e) => {
+      e.stopPropagation(); // Impede cliques indesejados
+      const content = document.getElementById(contentId);
+      const chevron = document.getElementById(chevronId);
 
-        // Permite clicar no texto para abrir também (melhora usabilidade)
-        li.querySelector('span.font-medium').addEventListener('click', () => toggleBtn.click());
+      // Alterna visibilidade
+      content.classList.toggle("hidden");
 
-        // 2. Checkbox Pai
-        if (!hasSubtasks) {
-            li.querySelector('.topic-checkbox').addEventListener('change', (e) => handleToggleSubjectTopic(e, item.id));
-        }
-
-        // 3. Deletar Pai
-        li.querySelector('.btn-delete-item').addEventListener('click', (e) => handleDeleteSubjectTopic(e, item.id));
-
-        // 4. Adicionar Subtarefa
-        li.querySelector('.form-add-subtask').addEventListener('submit', (e) => handleAddSubTopic(e, item.id));
-
-        // 5. Checkbox Filhos
-        li.querySelectorAll('.subtask-checkbox').forEach(cb => {
-            cb.addEventListener('change', (e) => handleToggleSubTopic(e, item.id, parseInt(cb.dataset.subIdx)));
-        });
-
-        // 6. Deletar Filho
-        li.querySelectorAll('.btn-delete-subtask').forEach(btn => {
-            btn.addEventListener('click', (e) => handleDeleteSubTopic(e, item.id, parseInt(btn.dataset.subIdx)));
-        });
-
-        listElement.appendChild(li);
+      // Gira a setinha
+      if (content.classList.contains("hidden")) {
+        chevron.style.transform = "rotate(0deg)";
+      } else {
+        chevron.style.transform = "rotate(90deg)";
+      }
     });
 
-    if (typeof lucide !== 'undefined') {
-        lucide.createIcons();
+    // Permite clicar no texto para abrir também (melhora usabilidade)
+    li.querySelector("span.font-medium").addEventListener("click", () =>
+      toggleBtn.click()
+    );
+
+    // 2. Checkbox Pai
+    if (!hasSubtasks) {
+      li.querySelector(".topic-checkbox").addEventListener("change", (e) =>
+        handleToggleSubjectTopic(e, item.id)
+      );
     }
+
+    // 3. Deletar Pai
+    li.querySelector(".btn-delete-item").addEventListener("click", (e) =>
+      handleDeleteSubjectTopic(e, item.id)
+    );
+
+    // 4. Adicionar Subtarefa
+    li.querySelector(".form-add-subtask").addEventListener("submit", (e) =>
+      handleAddSubTopic(e, item.id)
+    );
+
+    // 5. Checkbox Filhos
+    li.querySelectorAll(".subtask-checkbox").forEach((cb) => {
+      cb.addEventListener("change", (e) =>
+        handleToggleSubTopic(e, item.id, parseInt(cb.dataset.subIdx))
+      );
+    });
+
+    // 6. Deletar Filho
+    li.querySelectorAll(".btn-delete-subtask").forEach((btn) => {
+      btn.addEventListener("click", (e) =>
+        handleDeleteSubTopic(e, item.id, parseInt(btn.dataset.subIdx))
+      );
+    });
+
+    listElement.appendChild(li);
+  });
+
+  if (typeof lucide !== "undefined") {
+    lucide.createIcons();
+  }
 }
 
 function showImportTopicsForm() {
-    if (!currentSubjectId) return;
+  if (!currentSubjectId) return;
 
-    // Filtra todas as outras disciplinas, excluindo a que estamos editando
-    const otherSubjects = allSubjects.filter(s => s.id !== currentSubjectId);
-    
-    let optionsHtml = otherSubjects.map(sub => 
-        `<option value="${sub.id}">${sub.name}</option>`
-    ).join('');
-    
-    if (otherSubjects.length === 0) {
-        optionsHtml = '<option value="" disabled>Nenhuma outra disciplina encontrada.</option>';
-    }
+  // Filtra todas as outras disciplinas, excluindo a que estamos editando
+  const otherSubjects = allSubjects.filter((s) => s.id !== currentSubjectId);
 
-    const formHtml = `
+  let optionsHtml = otherSubjects
+    .map((sub) => `<option value="${sub.id}">${sub.name}</option>`)
+    .join("");
+
+  if (otherSubjects.length === 0) {
+    optionsHtml =
+      '<option value="" disabled>Nenhuma outra disciplina encontrada.</option>';
+  }
+
+  const formHtml = `
         <form id="form-import-topics" class="space-y-6">
             <p class="text-zinc-400">Selecione a disciplina de origem para copiar todos os tópicos (e subtarefas) para 
-                a disciplina atual: <span class="font-semibold text-white">${allSubjects.find(s => s.id === currentSubjectId)?.name || '...'}</span></p>
+                a disciplina atual: <span class="font-semibold text-white">${
+                  allSubjects.find((s) => s.id === currentSubjectId)?.name ||
+                  "..."
+                }</span></p>
 
             <div>
                 <label for="sourceSubjectSelect" class="block text-sm font-medium text-zinc-300 mb-1">
@@ -5033,83 +5072,99 @@ function showImportTopicsForm() {
         </form>
     `;
 
-    openSlideOver(formHtml, "Importar Tópicos de Outra Disciplina");
+  openSlideOver(formHtml, "Importar Tópicos de Outra Disciplina");
 
-    // Atribui o Listener
-    document.getElementById('form-import-topics').addEventListener('submit', (e) => {
-        const sourceId = document.getElementById('sourceSubjectSelect').value;
-        handleImportTopics(e, sourceId, currentSubjectId);
+  // Atribui o Listener
+  document
+    .getElementById("form-import-topics")
+    .addEventListener("submit", (e) => {
+      const sourceId = document.getElementById("sourceSubjectSelect").value;
+      handleImportTopics(e, sourceId, currentSubjectId);
     });
 }
 
-
 async function handleImportTopics(e, sourceSubjectId, targetSubjectId) {
-    e.preventDefault();
-    
-    if (!sourceSubjectId || !targetSubjectId) {
-        showModal("Erro", "IDs de origem ou destino ausentes.", "error");
-        return;
+  e.preventDefault();
+
+  if (!sourceSubjectId || !targetSubjectId) {
+    showModal("Erro", "IDs de origem ou destino ausentes.", "error");
+    return;
+  }
+
+  if (
+    !(await showConfirmModal(
+      "Confirmação de Importação",
+      "Isso copiará TODOS os tópicos e subtarefas da disciplina selecionada para a atual. Deseja continuar?",
+      "Importar",
+      "Cancelar"
+    ))
+  ) {
+    return;
+  }
+
+  try {
+    // 1. Inicia o Batch
+    const batch = writeBatch(db);
+
+    // 2. Define o caminho de origem
+    const sourceTopicsCollection = getSubjectTopicsCollection(sourceSubjectId);
+    const sourceQuery = query(
+      sourceTopicsCollection,
+      orderBy("createdAt", "desc")
+    );
+
+    // 3. Busca todos os tópicos de origem
+    const querySnapshot = await getDocs(sourceQuery);
+
+    if (querySnapshot.empty) {
+      showModal(
+        "Atenção",
+        "A disciplina de origem não tem tópicos para importar."
+      );
+      return;
     }
 
-    if (!await showConfirmModal(
-        "Confirmação de Importação", 
-        "Isso copiará TODOS os tópicos e subtarefas da disciplina selecionada para a atual. Deseja continuar?",
-        "Importar", "Cancelar"
-    )) {
-        return;
-    }
+    // 4. Define o caminho de destino
+    const targetTopicsCollection = getSubjectTopicsCollection(targetSubjectId);
 
-    try {
-        // 1. Inicia o Batch
-        const batch = writeBatch(db);
+    // 5. Itera sobre os documentos encontrados e prepara a cópia
+    querySnapshot.forEach((sourceDoc) => {
+      const sourceData = sourceDoc.data();
 
-        // 2. Define o caminho de origem
-        const sourceTopicsCollection = getSubjectTopicsCollection(sourceSubjectId);
-        const sourceQuery = query(sourceTopicsCollection, orderBy('createdAt', 'asc'));
-        
-        // 3. Busca todos os tópicos de origem
-        const querySnapshot = await getDocs(sourceQuery);
-        
-        if (querySnapshot.empty) {
-            showModal("Atenção", "A disciplina de origem não tem tópicos para importar.");
-            return;
-        }
+      // Cria uma nova referência de documento (novo ID) no destino
+      const newDocRef = doc(targetTopicsCollection);
 
-        // 4. Define o caminho de destino
-        const targetTopicsCollection = getSubjectTopicsCollection(targetSubjectId);
-        
-        // 5. Itera sobre os documentos encontrados e prepara a cópia
-        querySnapshot.forEach(sourceDoc => {
-            const sourceData = sourceDoc.data();
-            
-            // Cria uma nova referência de documento (novo ID) no destino
-            const newDocRef = doc(targetTopicsCollection);
-            
-            // Prepara os novos dados para gravação
-            const newData = {
-                text: sourceData.text,
-                subtasks: sourceData.subtasks || [], // Copia as subtarefas
-                completed: false, // IMPORTANTE: Reseta o status de conclusão
-                createdAt: serverTimestamp() 
-            };
-            
-            // Adiciona a operação de SET (criar) ao lote
-            batch.set(newDocRef, newData);
-        });
+      // Prepara os novos dados para gravação
+      const newData = {
+        text: sourceData.text,
+        subtasks: sourceData.subtasks || [], // Copia as subtarefas
+        completed: false, // IMPORTANTE: Reseta o status de conclusão
+        createdAt: serverTimestamp(),
+      };
 
-        // 6. Executa o Batch
-        await batch.commit();
+      // Adiciona a operação de SET (criar) ao lote
+      batch.set(newDocRef, newData);
+    });
 
-        closeSlideOver();
-        showModal("Sucesso", `Importação concluída! ${querySnapshot.size} tópicos foram copiados.`);
-        
-        // Dispara o reload dos dados do Firebase (onSnapshot)
-        loadSubjectData(targetSubjectId); 
+    // 6. Executa o Batch
+    await batch.commit();
 
-    } catch (error) {
-        console.error("Erro ao clonar tópicos:", error);
-        showModal("Erro", "Não foi possível realizar a importação dos tópicos.", "error");
-    }
+    closeSlideOver();
+    showModal(
+      "Sucesso",
+      `Importação concluída! ${querySnapshot.size} tópicos foram copiados.`
+    );
+
+    // Dispara o reload dos dados do Firebase (onSnapshot)
+    loadSubjectData(targetSubjectId);
+  } catch (error) {
+    console.error("Erro ao clonar tópicos:", error);
+    showModal(
+      "Erro",
+      "Não foi possível realizar a importação dos tópicos.",
+      "error"
+    );
+  }
 }
 
 async function handleAddSubTopic(e, topicId) {
@@ -5355,60 +5410,86 @@ function renderSubjectTaskKanban(tasks) {
 }
 
 function createSubjectTaskCard(task) {
-    const card = document.createElement('div');
-    card.dataset.id = task.id;
+  const card = document.createElement("div");
+  card.dataset.id = task.id;
 
-    // Define cores baseadas no status
-    const borderClass = task.status === 'done' ? 'border-l-4 border-green-500' : 
-                       (task.status === 'doing' ? 'border-l-4 border-yellow-500' : 'border-l-4 border-zinc-600');
+  // Define cores baseadas no status
+  const borderClass =
+    task.status === "done"
+      ? "border-l-4 border-green-500"
+      : task.status === "doing"
+      ? "border-l-4 border-yellow-500"
+      : "border-l-4 border-zinc-600";
 
-    card.className = `${COLORS.bgSecondary} p-3 rounded shadow cursor-move text-sm task-card ${borderClass} flex flex-col gap-2`;
+  card.className = `${COLORS.bgSecondary} p-3 rounded shadow cursor-move text-sm task-card ${borderClass} flex flex-col gap-2`;
 
-    // Formata Data e Hora
-    let dateDisplay = '';
-    if (task.dueDate) {
-        const dateObj = new Date(task.dueDate + 'T12:00:00');
-        const dateStr = dateObj.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
-        const timeStr = task.dueTime ? ` às ${task.dueTime}` : ''; // Adiciona a hora se existir
-        
-        // Lógica visual de atraso
-        const isLate = new Date(task.dueDate) < new Date().setHours(0,0,0,0) && task.status !== 'done';
-        const dateColor = isLate ? 'text-red-400' : 'text-zinc-400';
-        
-        dateDisplay = `<div class="flex items-center gap-1 ${dateColor} text-xs">
+  // Formata Data e Hora
+  let dateDisplay = "";
+  if (task.dueDate) {
+    const dateObj = new Date(task.dueDate + "T12:00:00");
+    const dateStr = dateObj.toLocaleDateString("pt-BR", {
+      day: "2-digit",
+      month: "2-digit",
+    });
+    const timeStr = task.dueTime ? ` às ${task.dueTime}` : ""; // Adiciona a hora se existir
+
+    // Lógica visual de atraso
+    const isLate =
+      new Date(task.dueDate) < new Date().setHours(0, 0, 0, 0) &&
+      task.status !== "done";
+    const dateColor = isLate ? "text-red-400" : "text-zinc-400";
+
+    dateDisplay = `<div class="flex items-center gap-1 ${dateColor} text-xs">
             <i data-lucide="calendar" class="w-3 h-3"></i>
             <span>${dateStr}${timeStr}</span>
         </div>`;
-    }
+  }
 
-    card.innerHTML = `
+  card.innerHTML = `
         <div class="flex justify-between items-start">
-            <span class="font-medium text-white leading-tight">${task.title}</span>
-            <button data-delete-id="${task.id}" class="text-zinc-500 hover:text-red-500 flex-shrink-0 ml-2">
+            <span class="font-medium text-white leading-tight">${
+              task.title
+            }</span>
+            <button data-delete-id="${
+              task.id
+            }" class="text-zinc-500 hover:text-red-500 flex-shrink-0 ml-2">
                 &times;
             </button>
         </div>
-        ${task.description ? `<p class="text-xs text-zinc-500 line-clamp-2">${task.description}</p>` : ''}
+        ${
+          task.description
+            ? `<p class="text-xs text-zinc-500 line-clamp-2">${task.description}</p>`
+            : ""
+        }
         ${dateDisplay}
     `;
 
-    // Listeners (iguais ao anterior)
-    card.addEventListener('click', (e) => {
-        if (e.target.closest('[data-delete-id]')) return;
-        showSubjectTaskDetails(task);
-    });
+  // Listeners (iguais ao anterior)
+  card.addEventListener("click", (e) => {
+    if (e.target.closest("[data-delete-id]")) return;
+    showSubjectTaskDetails(task);
+  });
 
-    card.querySelector(`[data-delete-id="${task.id}"]`).addEventListener('click', async (e) => {
-        e.stopPropagation();
-        if (await showConfirmModal('Excluir Tarefa?', 'Excluir esta tarefa da disciplina?')) {
-            try {
-                await deleteDoc(getSubjectTaskDoc(currentSubjectId, task.id));
-            } catch (error) { console.error("Erro ao deletar tarefa:", error); }
+  card
+    .querySelector(`[data-delete-id="${task.id}"]`)
+    .addEventListener("click", async (e) => {
+      e.stopPropagation();
+      if (
+        await showConfirmModal(
+          "Excluir Tarefa?",
+          "Excluir esta tarefa da disciplina?"
+        )
+      ) {
+        try {
+          await deleteDoc(getSubjectTaskDoc(currentSubjectId, task.id));
+        } catch (error) {
+          console.error("Erro ao deletar tarefa:", error);
         }
+      }
     });
 
-    if (typeof lucide !== 'undefined') lucide.createIcons();
-    return card;
+  if (typeof lucide !== "undefined") lucide.createIcons();
+  return card;
 }
 
 async function updateSubjectTaskStatus(taskId, newStatus) {
@@ -5423,7 +5504,7 @@ async function updateSubjectTaskStatus(taskId, newStatus) {
 }
 
 function showAddSubjectTaskForm() {
-    const formHtml = `
+  const formHtml = `
         <form id="form-add-subject-task-modal" class="space-y-4">
             <input type="text" name="title" required class="w-full px-3 py-2 bg-zinc-700 border border-zinc-600 rounded-md" placeholder="Título (ex: Listas Encadeadas)">
             
@@ -5451,35 +5532,39 @@ function showAddSubjectTaskForm() {
             <button type="submit" class="w-full py-2 px-4 bg-blue-500 hover:bg-blue-600 rounded-md font-semibold">Salvar Tarefa</button>
         </form>
     `;
-    openSlideOver(formHtml, "Nova Tarefa da Disciplina");
-    document.getElementById('form-add-subject-task-modal').addEventListener('submit', handleAddSubjectTask);
+  openSlideOver(formHtml, "Nova Tarefa da Disciplina");
+  document
+    .getElementById("form-add-subject-task-modal")
+    .addEventListener("submit", handleAddSubjectTask);
 }
 
 async function handleAddSubjectTask(e) {
-    e.preventDefault();
-    if (!currentSubjectId) return;
+  e.preventDefault();
+  if (!currentSubjectId) return;
 
-    const form = e.target;
-    const title = form.title.value;
-    const description = form.description.value;
-    const dueDate = form.dueDate.value;
-    const dueTime = form.dueTime.value; // <--- NOVO
-    const recurrence = form.recurrence.value;
+  const form = e.target;
+  const title = form.title.value;
+  const description = form.description.value;
+  const dueDate = form.dueDate.value;
+  const dueTime = form.dueTime.value; // <--- NOVO
+  const recurrence = form.recurrence.value;
 
-    try {
-        await addDoc(getSubjectTasksCollection(currentSubjectId), {
-            title,
-            description: description || "",
-            dueDate: dueDate || null,
-            dueTime: dueTime || null, // <--- SALVANDO NO BANCO
-            recurrence: recurrence || "none",
-            status: 'todo',
-            notified: false,
-            createdAt: serverTimestamp()
-        });
-        form.reset();
-        closeSlideOver();
-    } catch (error) { console.error("Erro ao adicionar tarefa da disciplina:", error); }
+  try {
+    await addDoc(getSubjectTasksCollection(currentSubjectId), {
+      title,
+      description: description || "",
+      dueDate: dueDate || null,
+      dueTime: dueTime || null, // <--- SALVANDO NO BANCO
+      recurrence: recurrence || "none",
+      status: "todo",
+      notified: false,
+      createdAt: serverTimestamp(),
+    });
+    form.reset();
+    closeSlideOver();
+  } catch (error) {
+    console.error("Erro ao adicionar tarefa da disciplina:", error);
+  }
 }
 
 function showSubjectTaskDetails(task) {
@@ -5634,87 +5719,104 @@ function initCalendar() {
 }
 
 function getAllCalendarEvents() {
-    let events = [];
-    const todayStr = new Date().toISOString().split('T')[0];
+  let events = [];
+  const todayStr = new Date().toISOString().split("T")[0];
 
-    // Helper para formatar data ISO (YYYY-MM-DD) + Hora (HH:MM) para o FullCalendar
-    const formatEventStart = (date, time) => {
-        return time ? `${date}T${time}:00` : date;
-    };
+  // Helper para formatar data ISO (YYYY-MM-DD) + Hora (HH:MM) para o FullCalendar
+  const formatEventStart = (date, time) => {
+    return time ? `${date}T${time}:00` : date;
+  };
 
-    // 1. Tarefas Gerais
-    allTasks.filter(t => t.dueDate).forEach(t => {
-        let color = '#3b82f6'; // Azul
-        if (t.status === 'done') color = '#22c55e';
-        else if (t.status === 'overdue' || (t.dueDate < todayStr && t.status !== 'done')) color = '#ef4444';
-        else if (t.status === 'doing') color = '#eab308';
+  // 1. Tarefas Gerais
+  allTasks
+    .filter((t) => t.dueDate)
+    .forEach((t) => {
+      let color = "#3b82f6"; // Azul
+      if (t.status === "done") color = "#22c55e";
+      else if (
+        t.status === "overdue" ||
+        (t.dueDate < todayStr && t.status !== "done")
+      )
+        color = "#ef4444";
+      else if (t.status === "doing") color = "#eab308";
 
-        events.push({
-            id: t.id,
-            title: t.title,
-            start: formatEventStart(t.dueDate, t.dueTime), // Usa a hora se tiver
-            allDay: !t.dueTime, // Se não tiver hora, é dia todo
-            color: color,
-            textColor: '#ffffff',
-            extendedProps: { taskType: 'main', taskId: t.id, source: 'Pessoal' }
-        });
+      events.push({
+        id: t.id,
+        title: t.title,
+        start: formatEventStart(t.dueDate, t.dueTime), // Usa a hora se tiver
+        allDay: !t.dueTime, // Se não tiver hora, é dia todo
+        color: color,
+        textColor: "#ffffff",
+        extendedProps: { taskType: "main", taskId: t.id, source: "Pessoal" },
+      });
     });
 
-    // 2. Tarefas da Agência
-    Object.values(allProjectTasks).flat().filter(t => t.dueDate).forEach(t => {
-        events.push({
-            id: `${t.projectId}-${t.id}`,
-            title: `[Proj] ${t.title}`,
-            start: formatEventStart(t.dueDate, t.dueTime),
-            allDay: !t.dueTime,
-            color: '#8b5cf6', // Roxo
-            textColor: '#ffffff',
-            extendedProps: { taskType: 'project', taskId: t.id, projectId: t.projectId, source: 'Agência' }
-        });
+  // 2. Tarefas da Agência
+  Object.values(allProjectTasks)
+    .flat()
+    .filter((t) => t.dueDate)
+    .forEach((t) => {
+      events.push({
+        id: `${t.projectId}-${t.id}`,
+        title: `[Proj] ${t.title}`,
+        start: formatEventStart(t.dueDate, t.dueTime),
+        allDay: !t.dueTime,
+        color: "#8b5cf6", // Roxo
+        textColor: "#ffffff",
+        extendedProps: {
+          taskType: "project",
+          taskId: t.id,
+          projectId: t.projectId,
+          source: "Agência",
+        },
+      });
     });
 
-    // 3. Tarefas da Faculdade (AQUI ENTRA SEU PEDIDO)
-    Object.values(allSubjectTasks).flat().filter(t => t.dueDate).forEach(t => {
-        events.push({
-            id: `${t.subjectId}-${t.id}`,
-            title: `[Estudo] ${t.title}`, // Prefixo para identificar fácil
-            start: formatEventStart(t.dueDate, t.dueTime),
-            allDay: !t.dueTime,
-            color: '#ec4899', // Rosa
-            textColor: '#ffffff',
-            extendedProps: { 
-                taskType: 'subject', 
-                taskId: t.id, 
-                subjectId: t.subjectId, 
-                source: 'Faculdade',
-                description: t.description // Passa a descrição para usar no tooltip se quiser
-            }
-        });
+  // 3. Tarefas da Faculdade (AQUI ENTRA SEU PEDIDO)
+  Object.values(allSubjectTasks)
+    .flat()
+    .filter((t) => t.dueDate)
+    .forEach((t) => {
+      events.push({
+        id: `${t.subjectId}-${t.id}`,
+        title: `[Estudo] ${t.title}`, // Prefixo para identificar fácil
+        start: formatEventStart(t.dueDate, t.dueTime),
+        allDay: !t.dueTime,
+        color: "#ec4899", // Rosa
+        textColor: "#ffffff",
+        extendedProps: {
+          taskType: "subject",
+          taskId: t.id,
+          subjectId: t.subjectId,
+          source: "Faculdade",
+          description: t.description, // Passa a descrição para usar no tooltip se quiser
+        },
+      });
     });
 
-    // 4. Aulas Recorrentes (Mantém igual)
-    allSubjects.forEach(subject => {
-        if (!subject.schedule) return;
-        scheduleDays.forEach(day => {
-            if (subject.schedule[day] && subject.schedule[day].length > 0) {
-                subject.schedule[day].forEach(timeSlot => {
-                    const [startTime, endTime] = timeSlot.split(' - ');
-                    events.push({
-                        id: `${subject.id}-${day}-${timeSlot}`,
-                        title: `Aula: ${subject.name}`,
-                        daysOfWeek: [scheduleDays.indexOf(day) + 1],
-                        startTime: startTime,
-                        endTime: endTime,
-                        color: '#a855f7', // Roxo escuro
-                        textColor: '#ffffff',
-                        extendedProps: { taskType: 'class', source: 'Horário Fixo' }
-                    });
-                });
-            }
+  // 4. Aulas Recorrentes (Mantém igual)
+  allSubjects.forEach((subject) => {
+    if (!subject.schedule) return;
+    scheduleDays.forEach((day) => {
+      if (subject.schedule[day] && subject.schedule[day].length > 0) {
+        subject.schedule[day].forEach((timeSlot) => {
+          const [startTime, endTime] = timeSlot.split(" - ");
+          events.push({
+            id: `${subject.id}-${day}-${timeSlot}`,
+            title: `Aula: ${subject.name}`,
+            daysOfWeek: [scheduleDays.indexOf(day) + 1],
+            startTime: startTime,
+            endTime: endTime,
+            color: "#a855f7", // Roxo escuro
+            textColor: "#ffffff",
+            extendedProps: { taskType: "class", source: "Horário Fixo" },
+          });
         });
+      }
     });
+  });
 
-    return events;
+  return events;
 }
 
 function updateCalendar() {
@@ -6316,14 +6418,12 @@ function renderFocusHistory(history) {
     el.className = `p-2 ${COLORS.bgCard} rounded-md group relative flex justify-between items-center`;
 
     const date = item.createdAt?.toDate
-      ? item.createdAt
-          .toDate()
-          .toLocaleString(locale, {
-            day: "numeric",
-            month: "short",
-            hour: "2-digit",
-            minute: "2-digit",
-          })
+      ? item.createdAt.toDate().toLocaleString(locale, {
+          day: "numeric",
+          month: "short",
+          hour: "2-digit",
+          minute: "2-digit",
+        })
       : "...";
 
     // Define o HTML interno com o botão de exclusão
