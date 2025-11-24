@@ -907,17 +907,17 @@ async function loadInitialData() {
     (error) => console.error("Erro ao carregar projetos da agência:", error)
   );
 
-  const subjectsQuery = query(getSubjectsCollection());
-  unsubscribeSubjects = onSnapshot(
+const subjectsQuery = query(getSubjectsCollection(), orderBy('createdAt', 'asc')); // <--- MUDANÇA AQUI
+unsubscribeSubjects = onSnapshot(
     subjectsQuery,
     (snapshot) => {
-      allSubjects = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+        allSubjects = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
 
-      renderCollegeSubjects(allSubjects);
-      renderCollegeSchedule(allSubjects);
-      renderDashboardSchedule(allSubjects);
-      updateCalendar();
-      updateCollegeStats(allSubjects, allSubjectTasks);
+        renderCollegeSubjects(allSubjects);
+        renderCollegeSchedule(allSubjects);
+        renderDashboardSchedule(allSubjects);
+        updateCalendar();
+        updateCollegeStats(allSubjects, allSubjectTasks);
 
       allSubjectTasks = {};
       allSubjects.forEach((subject) => {
@@ -4749,7 +4749,7 @@ function loadSubjectData(subjectId) {
 
   const topicsQuery = query(
     getSubjectTopicsCollection(subjectId),
-    orderBy("createdAt")
+    orderBy('createdAt', 'asc')
   );
   unsubscribeSubjectItems.topics = onSnapshot(topicsQuery, (snapshot) => {
     const items = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
@@ -5065,7 +5065,7 @@ async function handleImportTopics(e, sourceSubjectId, targetSubjectId) {
 
         // 2. Define o caminho de origem
         const sourceTopicsCollection = getSubjectTopicsCollection(sourceSubjectId);
-        const sourceQuery = query(sourceTopicsCollection);
+        const sourceQuery = query(sourceTopicsCollection, orderBy('createdAt', 'asc'));
         
         // 3. Busca todos os tópicos de origem
         const querySnapshot = await getDocs(sourceQuery);
