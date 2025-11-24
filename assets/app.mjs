@@ -5222,51 +5222,60 @@ function renderSubjectTaskKanban(tasks) {
 }
 
 function createSubjectTaskCard(task) {
-  const card = document.createElement("div");
-  card.dataset.id = task.id;
+    const card = document.createElement('div');
+    card.dataset.id = task.id;
 
-  card.className = `${COLORS.bgSecondary} p-2 rounded shadow cursor-move text-sm task-card`;
+    // Define cores baseadas no status
+    const borderClass = task.status === 'done' ? 'border-l-4 border-green-500' : 
+                       (task.status === 'doing' ? 'border-l-4 border-yellow-500' : 'border-l-4 border-zinc-600');
 
-  let recurrenceInfo = "";
-  if (task.recurrence && task.recurrence !== "none") {
-    recurrenceInfo = `<i data-lucide="repeat" class="w-3 h-3 text-zinc-400" title="Tarefa Recorrente (${task.recurrence})"></i>`;
-  }
+    card.className = `${COLORS.bgSecondary} p-3 rounded shadow cursor-move text-sm task-card ${borderClass} flex flex-col gap-2`;
 
-  card.innerHTML = `
-                <div class="flex justify-between items-start">
-                    <span class="pr-2">${task.title}</span>
-                    <div class="flex items-center gap-2">
-                        ${recurrenceInfo}
-                        <button data-delete-id="${task.id}" class="text-zinc-500 hover:text-red-500 flex-shrink-0">&times;</button>
-                    </div>
-                </div>
-            `;
+    // Formata Data e Hora
+    let dateDisplay = '';
+    if (task.dueDate) {
+        const dateObj = new Date(task.dueDate + 'T12:00:00');
+        const dateStr = dateObj.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+        const timeStr = task.dueTime ? ` às ${task.dueTime}` : ''; // Adiciona a hora se existir
+        
+        // Lógica visual de atraso
+        const isLate = new Date(task.dueDate) < new Date().setHours(0,0,0,0) && task.status !== 'done';
+        const dateColor = isLate ? 'text-red-400' : 'text-zinc-400';
+        
+        dateDisplay = `<div class="flex items-center gap-1 ${dateColor} text-xs">
+            <i data-lucide="calendar" class="w-3 h-3"></i>
+            <span>${dateStr}${timeStr}</span>
+        </div>`;
+    }
 
-  card.addEventListener("click", (e) => {
-    if (e.target.closest("[data-delete-id]")) return;
-    showSubjectTaskDetails(task);
-  });
+    card.innerHTML = `
+        <div class="flex justify-between items-start">
+            <span class="font-medium text-white leading-tight">${task.title}</span>
+            <button data-delete-id="${task.id}" class="text-zinc-500 hover:text-red-500 flex-shrink-0 ml-2">
+                &times;
+            </button>
+        </div>
+        ${task.description ? `<p class="text-xs text-zinc-500 line-clamp-2">${task.description}</p>` : ''}
+        ${dateDisplay}
+    `;
 
-  card
-    .querySelector(`[data-delete-id="${task.id}"]`)
-    .addEventListener("click", async (e) => {
-      e.stopPropagation();
-      if (
-        await showConfirmModal(
-          "Excluir Tarefa?",
-          "Excluir esta tarefa da disciplina?"
-        )
-      ) {
-        try {
-          await deleteDoc(getSubjectTaskDoc(currentSubjectId, task.id));
-        } catch (error) {
-          console.error("Erro ao deletar tarefa da disciplina:", error);
-        }
-      }
+    // Listeners (iguais ao anterior)
+    card.addEventListener('click', (e) => {
+        if (e.target.closest('[data-delete-id]')) return;
+        showSubjectTaskDetails(task);
     });
 
-  if (typeof lucide !== "undefined") lucide.createIcons();
-  return card;
+    card.querySelector(`[data-delete-id="${task.id}"]`).addEventListener('click', async (e) => {
+        e.stopPropagation();
+        if (await showConfirmModal('Excluir Tarefa?', 'Excluir esta tarefa da disciplina?')) {
+            try {
+                await deleteDoc(getSubjectTaskDoc(currentSubjectId, task.id));
+            } catch (error) { console.error("Erro ao deletar tarefa:", error); }
+        }
+    });
+
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+    return card;
 }
 
 async function updateSubjectTaskStatus(taskId, newStatus) {
@@ -5281,56 +5290,63 @@ async function updateSubjectTaskStatus(taskId, newStatus) {
 }
 
 function showAddSubjectTaskForm() {
-  const formHtml = `
-                <form id="form-add-subject-task-modal" class="space-y-4">
-                    <input type="text" name="title" required class="w-full px-3 py-2 bg-zinc-700 border border-zinc-600 rounded-md" placeholder="Título da tarefa...">
-                    <textarea name="description" rows="3" class="w-full px-3 py-2 bg-zinc-700 border border-zinc-600 rounded-md" placeholder="Descrição (opcional)..."></textarea>
-                    <div>
-                        <label class="block text-sm font-medium text-zinc-300 mb-1">Data de Entrega</label>
-                        <input type="date" name="dueDate" class="w-full px-3 py-2 bg-zinc-700 border border-zinc-600 rounded-md text-zinc-300">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-zinc-300 mb-1">Recorrência</label>
-                        <select name="recurrence" class="w-full px-3 py-2 bg-zinc-700 border border-zinc-600 rounded-md">
-                            <option value="none">Nenhuma</option>
-                            <option value="daily">Diária</option>
-                            <option value="weekly">Semanal</option>
-                        </select>
-                    </div>
-                    <button type="submit" class="w-full py-2 px-4 bg-blue-500 hover:bg-blue-600 rounded-md font-semibold">Salvar</button>
-                </form>
-            `;
-  openSlideOver(formHtml, "Nova Tarefa da Disciplina");
-  document
-    .getElementById("form-add-subject-task-modal")
-    .addEventListener("submit", handleAddSubjectTask);
+    const formHtml = `
+        <form id="form-add-subject-task-modal" class="space-y-4">
+            <input type="text" name="title" required class="w-full px-3 py-2 bg-zinc-700 border border-zinc-600 rounded-md" placeholder="Título (ex: Listas Encadeadas)">
+            
+            <textarea name="description" rows="4" class="w-full px-3 py-2 bg-zinc-700 border border-zinc-600 rounded-md font-mono text-sm" placeholder="Descrição (ex: Entender struct nó...)"></textarea>
+            
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-zinc-300 mb-1">Data</label>
+                    <input type="date" name="dueDate" required class="w-full px-3 py-2 bg-zinc-700 border border-zinc-600 rounded-md text-zinc-300">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-zinc-300 mb-1">Horário (Opcional)</label>
+                    <input type="time" name="dueTime" class="w-full px-3 py-2 bg-zinc-700 border border-zinc-600 rounded-md text-zinc-300">
+                </div>
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-zinc-300 mb-1">Recorrência</label>
+                <select name="recurrence" class="w-full px-3 py-2 bg-zinc-700 border border-zinc-600 rounded-md">
+                    <option value="none">Nenhuma</option>
+                    <option value="daily">Diária</option>
+                    <option value="weekly">Semanal</option>
+                </select>
+            </div>
+            <button type="submit" class="w-full py-2 px-4 bg-blue-500 hover:bg-blue-600 rounded-md font-semibold">Salvar Tarefa</button>
+        </form>
+    `;
+    openSlideOver(formHtml, "Nova Tarefa da Disciplina");
+    document.getElementById('form-add-subject-task-modal').addEventListener('submit', handleAddSubjectTask);
 }
 
 async function handleAddSubjectTask(e) {
-  e.preventDefault();
-  if (!currentSubjectId) return;
+    e.preventDefault();
+    if (!currentSubjectId) return;
 
-  const form = e.target;
-  const title = form.title.value;
-  const description = form.description.value;
-  const dueDate = form.dueDate.value;
-  const recurrence = form.recurrence.value;
+    const form = e.target;
+    const title = form.title.value;
+    const description = form.description.value;
+    const dueDate = form.dueDate.value;
+    const dueTime = form.dueTime.value; // <--- NOVO
+    const recurrence = form.recurrence.value;
 
-  try {
-    await addDoc(getSubjectTasksCollection(currentSubjectId), {
-      title,
-      description: description || "",
-      dueDate: dueDate || null,
-      recurrence: recurrence || "none",
-      status: "todo",
-      notified: false,
-      createdAt: serverTimestamp(),
-    });
-    form.reset();
-    closeSlideOver();
-  } catch (error) {
-    console.error("Erro ao adicionar tarefa da disciplina:", error);
-  }
+    try {
+        await addDoc(getSubjectTasksCollection(currentSubjectId), {
+            title,
+            description: description || "",
+            dueDate: dueDate || null,
+            dueTime: dueTime || null, // <--- SALVANDO NO BANCO
+            recurrence: recurrence || "none",
+            status: 'todo',
+            notified: false,
+            createdAt: serverTimestamp()
+        });
+        form.reset();
+        closeSlideOver();
+    } catch (error) { console.error("Erro ao adicionar tarefa da disciplina:", error); }
 }
 
 function showSubjectTaskDetails(task) {
@@ -5485,102 +5501,87 @@ function initCalendar() {
 }
 
 function getAllCalendarEvents() {
-  let events = [];
-  const todayStr = new Date().toISOString().split("T")[0];
+    let events = [];
+    const todayStr = new Date().toISOString().split('T')[0];
 
-  allTasks
-    .filter((t) => t.dueDate)
-    .forEach((t) => {
-      let color = "#3b82f6";
-      if (t.status === "done") color = "#22c55e";
-      else if (
-        t.status === "overdue" ||
-        (t.dueDate < todayStr && t.status !== "done")
-      )
-        color = "#ef4444";
-      else if (t.status === "doing") color = "#eab308";
+    // Helper para formatar data ISO (YYYY-MM-DD) + Hora (HH:MM) para o FullCalendar
+    const formatEventStart = (date, time) => {
+        return time ? `${date}T${time}:00` : date;
+    };
 
-      events.push({
-        id: t.id,
-        title: t.title,
-        start: t.dueDate,
-        allDay: true,
-        color: color,
-        textColor: "#ffffff",
-        extendedProps: {
-          taskType: "main",
-          taskId: t.id,
-          source: "Minhas Tarefas",
-        },
-      });
-    });
+    // 1. Tarefas Gerais
+    allTasks.filter(t => t.dueDate).forEach(t => {
+        let color = '#3b82f6'; // Azul
+        if (t.status === 'done') color = '#22c55e';
+        else if (t.status === 'overdue' || (t.dueDate < todayStr && t.status !== 'done')) color = '#ef4444';
+        else if (t.status === 'doing') color = '#eab308';
 
-  Object.values(allProjectTasks)
-    .flat()
-    .filter((t) => t.dueDate)
-    .forEach((t) => {
-      const projectTitle = t.projectTitle || "Projeto";
-      const eventTitle = `[${projectTitle}] ${t.title}`;
-
-      events.push({
-        id: `${t.projectId}-${t.id}`,
-        title: eventTitle,
-        start: t.dueDate,
-        allDay: true,
-        color: "#8b5cf6",
-        textColor: "#ffffff",
-        extendedProps: {
-          taskType: "project",
-          taskId: t.id,
-          projectId: t.projectId,
-          source: "Agência",
-        },
-      });
-    });
-
-  Object.values(allSubjectTasks)
-    .flat()
-    .filter((t) => t.dueDate)
-    .forEach((t) => {
-      events.push({
-        id: `${t.subjectId}-${t.id}`,
-        title: `[${t.subjectName}] ${t.title}`,
-        start: t.dueDate,
-        allDay: true,
-        color: "#ec4899",
-        textColor: "#ffffff",
-        extendedProps: {
-          taskType: "subject",
-          taskId: t.id,
-          subjectId: t.subjectId,
-          source: "Faculdade",
-        },
-      });
-    });
-
-  allSubjects.forEach((subject) => {
-    if (!subject.schedule) return;
-    scheduleDays.forEach((day) => {
-      if (subject.schedule[day] && subject.schedule[day].length > 0) {
-        subject.schedule[day].forEach((timeSlot) => {
-          const [startTime, endTime] = timeSlot.split(" - ");
-
-          events.push({
-            id: `${subject.id}-${day}-${timeSlot}`,
-            title: subject.name,
-            daysOfWeek: [scheduleDays.indexOf(day) + 1],
-            startTime: startTime,
-            endTime: endTime,
-            color: "#a855f7",
-            textColor: "#ffffff",
-            extendedProps: { taskType: "class", source: "Faculdade (Aula)" },
-          });
+        events.push({
+            id: t.id,
+            title: t.title,
+            start: formatEventStart(t.dueDate, t.dueTime), // Usa a hora se tiver
+            allDay: !t.dueTime, // Se não tiver hora, é dia todo
+            color: color,
+            textColor: '#ffffff',
+            extendedProps: { taskType: 'main', taskId: t.id, source: 'Pessoal' }
         });
-      }
     });
-  });
 
-  return events;
+    // 2. Tarefas da Agência
+    Object.values(allProjectTasks).flat().filter(t => t.dueDate).forEach(t => {
+        events.push({
+            id: `${t.projectId}-${t.id}`,
+            title: `[Proj] ${t.title}`,
+            start: formatEventStart(t.dueDate, t.dueTime),
+            allDay: !t.dueTime,
+            color: '#8b5cf6', // Roxo
+            textColor: '#ffffff',
+            extendedProps: { taskType: 'project', taskId: t.id, projectId: t.projectId, source: 'Agência' }
+        });
+    });
+
+    // 3. Tarefas da Faculdade (AQUI ENTRA SEU PEDIDO)
+    Object.values(allSubjectTasks).flat().filter(t => t.dueDate).forEach(t => {
+        events.push({
+            id: `${t.subjectId}-${t.id}`,
+            title: `[Estudo] ${t.title}`, // Prefixo para identificar fácil
+            start: formatEventStart(t.dueDate, t.dueTime),
+            allDay: !t.dueTime,
+            color: '#ec4899', // Rosa
+            textColor: '#ffffff',
+            extendedProps: { 
+                taskType: 'subject', 
+                taskId: t.id, 
+                subjectId: t.subjectId, 
+                source: 'Faculdade',
+                description: t.description // Passa a descrição para usar no tooltip se quiser
+            }
+        });
+    });
+
+    // 4. Aulas Recorrentes (Mantém igual)
+    allSubjects.forEach(subject => {
+        if (!subject.schedule) return;
+        scheduleDays.forEach(day => {
+            if (subject.schedule[day] && subject.schedule[day].length > 0) {
+                subject.schedule[day].forEach(timeSlot => {
+                    const [startTime, endTime] = timeSlot.split(' - ');
+                    events.push({
+                        id: `${subject.id}-${day}-${timeSlot}`,
+                        title: `Aula: ${subject.name}`,
+                        daysOfWeek: [scheduleDays.indexOf(day) + 1],
+                        startTime: startTime,
+                        endTime: endTime,
+                        color: '#a855f7', // Roxo escuro
+                        textColor: '#ffffff',
+                        extendedProps: { taskType: 'class', source: 'Horário Fixo' }
+                    });
+                });
+            }
+        });
+    });
+
+    return events;
 }
 
 function updateCalendar() {
