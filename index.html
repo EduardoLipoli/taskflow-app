@@ -1998,29 +1998,72 @@
                     </div>
 
 
-                    <div class="xl:col-span-2">
-                        <div class="bg-zinc-800 rounded-2xl shadow-xl border border-zinc-700 overflow-hidden h-full">
-                            <div class="bg-gradient-to-r from-zinc-700 to-zinc-800 p-6 border-b border-zinc-600">
-                                <div
-                                    class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
-                                    <h3 class="text-xl font-bold text-white flex items-center gap-2">
-                                        <i data-lucide="clipboard-list" class="w-5 h-5 text-purple-400"></i>
-                                        Tarefas da Disciplina
-                                    </h3>
+<div class="xl:col-span-2">
+    <div class="bg-zinc-800 rounded-2xl shadow-xl border border-zinc-700 overflow-hidden h-full">
+        <div class="bg-gradient-to-r from-zinc-700 to-zinc-800 p-6 border-b border-zinc-600">
+            <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+                <h3 class="text-xl font-bold text-white flex items-center gap-2">
+                    <i data-lucide="clipboard-list" class="w-5 h-5 text-purple-400"></i>
+                    Tarefas da Disciplina
+                </h3>
 
-                                    <div class="flex items-center gap-3">
-                                        <button id="btn-show-add-subject-task-modal"
-                                            class="py-3 px-6 bg-blue-500 hover:bg-blue-600 rounded-lg font-semibold transition-colors flex items-center gap-2 group">
-                                            <i data-lucide="plus"
-                                                class="w-5 h-5 group-hover:scale-110 transition-transform"></i>
-                                            Nova Tarefa
-                                        </button>
-                                    </div>
+                <div class="flex items-center gap-3">
+                    <button id="btn-show-add-subject-task-modal"
+                        class="py-3 px-6 bg-blue-500 hover:bg-blue-600 rounded-lg font-semibold transition-colors flex items-center gap-2 group">
+                        <i data-lucide="plus" class="w-5 h-5 group-hover:scale-110 transition-transform"></i>
+                        Nova Tarefa
+                    </button>
+                </div>
+            </div>
+        </div>
 
-                                </div>
-                            </div>
-                        </div>
+        <div class="p-6">
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div class="bg-zinc-700/30 rounded-xl p-4 border border-zinc-600">
+                    <div class="flex items-center justify-between mb-4">
+                        <h4 class="text-md font-semibold text-blue-400 flex items-center gap-2">
+                            <i data-lucide="circle" class="w-4 h-4"></i>
+                            A Fazer
+                        </h4>
+                        <span
+                            class="bg-blue-500 text-white text-xs font-semibold px-2 py-1 rounded-full">...</span>
                     </div>
+                    <div id="subject-kanban-todo" class="min-h-60 space-y-3">
+                        <p class="text-sm text-zinc-500 p-4 text-center">Nenhuma tarefa aqui</p>
+                    </div>
+                </div>
+
+                <div class="bg-zinc-700/30 rounded-xl p-4 border border-zinc-600">
+                    <div class="flex items-center justify-between mb-4">
+                        <h4 class="text-md font-semibold text-yellow-400 flex items-center gap-2">
+                            <i data-lucide="play-circle" class="w-4 h-4"></i>
+                            Em Progresso
+                        </h4>
+                        <span
+                            class="bg-yellow-500 text-white text-xs font-semibold px-2 py-1 rounded-full">...</span>
+                    </div>
+                    <div id="subject-kanban-doing" class="min-h-60 space-y-3">
+                        <p class="text-sm text-zinc-500 p-4 text-center">Nenhuma tarefa aqui</p>
+                    </div>
+                </div>
+
+                <div class="bg-zinc-700/30 rounded-xl p-4 border border-zinc-600">
+                    <div class="flex items-center justify-between mb-4">
+                        <h4 class="text-md font-semibold text-green-400 flex items-center gap-2">
+                            <i data-lucide="check-circle" class="w-4 h-4"></i>
+                            Concluído
+                        </h4>
+                        <span
+                            class="bg-green-500 text-white text-xs font-semibold px-2 py-1 rounded-full">...</span>
+                    </div>
+                    <div id="subject-kanban-done" class="min-h-60 space-y-3">
+                        <p class="text-sm text-zinc-500 p-4 text-center">Nenhuma tarefa aqui</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        </div>
+</div>
                 </div>
             </div>
 
