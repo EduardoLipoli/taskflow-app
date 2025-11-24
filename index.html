@@ -1847,10 +1847,21 @@
 
                         <div class="bg-zinc-800 rounded-2xl shadow-xl border border-zinc-700 overflow-hidden">
                             <div class="bg-gradient-to-r from-zinc-700 to-zinc-800 p-6 border-b border-zinc-600">
-                                <h3 class="text-xl font-bold text-white flex items-center gap-2">
-                                    <i data-lucide="list" class="w-5 h-5 text-blue-400"></i>
-                                    Tópicos de Estudo
-                                </h3>
+                                <div
+                                    class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+                                    <h3 class="text-xl font-bold text-white flex items-center gap-2">
+                                        <i data-lucide="list" class="w-5 h-5 text-blue-400"></i>
+                                        Tópicos de Estudo
+                                    </h3>
+                                    <div class="flex items-center gap-3">
+                                        <button id="btn-show-import-topics-modal"
+                                            class="py-3 px-6 bg-green-500 hover:bg-green-600 rounded-lg font-semibold transition-colors flex items-center gap-2 group">
+                                            <i data-lucide="copy-check"
+                                                class="w-5 h-5 group-hover:scale-110 transition-transform"></i>
+                                            Importar Tópicos
+                                        </button>
+                                    </div>
+                                </div>
                             </div>
                             <div class="p-6">
                                 <ul id="subject-topics-list" class="space-y-3 mb-6 max-h-60 overflow-auto">
@@ -1996,64 +2007,16 @@
                                         <i data-lucide="clipboard-list" class="w-5 h-5 text-purple-400"></i>
                                         Tarefas da Disciplina
                                     </h3>
-                                    <button id="btn-show-add-subject-task-modal"
-                                        class="py-3 px-6 bg-blue-500 hover:bg-blue-600 rounded-lg font-semibold transition-colors flex items-center gap-2 group">
-                                        <i data-lucide="plus"
-                                            class="w-5 h-5 group-hover:scale-110 transition-transform"></i>
-                                        Nova Tarefa
-                                    </button>
-                                </div>
-                            </div>
-                            <div class="p-6">
-                                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
-                                    <div class="bg-zinc-700/30 rounded-xl p-4 border border-zinc-600">
-                                        <div class="flex items-center justify-between mb-4">
-                                            <h4 class="text-sm font-semibold text-blue-400 flex items-center gap-2">
-                                                <i data-lucide="circle" class="w-4 h-4"></i>
-                                                A Fazer
-                                            </h4>
-                                        </div>
-                                        <div id="subject-kanban-todo" class="min-h-40 space-y-3">
-                                            <div class="text-center py-8 text-zinc-500">
-                                                <i data-lucide="plus-circle"
-                                                    class="w-6 h-6 mx-auto mb-2 opacity-50"></i>
-                                                <p class="text-xs">Nenhuma tarefa</p>
-                                            </div>
-                                        </div>
+                                    <div class="flex items-center gap-3">
+                                        <button id="btn-show-add-subject-task-modal"
+                                            class="py-3 px-6 bg-blue-500 hover:bg-blue-600 rounded-lg font-semibold transition-colors flex items-center gap-2 group">
+                                            <i data-lucide="plus"
+                                                class="w-5 h-5 group-hover:scale-110 transition-transform"></i>
+                                            Nova Tarefa
+                                        </button>
                                     </div>
 
-
-                                    <div class="bg-zinc-700/30 rounded-xl p-4 border border-zinc-600">
-                                        <div class="flex items-center justify-between mb-4">
-                                            <h4 class="text-sm font-semibold text-yellow-400 flex items-center gap-2">
-                                                <i data-lucide="play-circle" class="w-4 h-4"></i>
-                                                Em Progresso
-                                            </h4>
-                                        </div>
-                                        <div id="subject-kanban-doing" class="min-h-40 space-y-3">
-                                            <div class="text-center py-8 text-zinc-500">
-                                                <i data-lucide="play" class="w-6 h-6 mx-auto mb-2 opacity-50"></i>
-                                                <p class="text-xs">Nenhuma tarefa</p>
-                                            </div>
-                                        </div>
-                                    </div>
-
-
-                                    <div class="bg-zinc-700/30 rounded-xl p-4 border border-zinc-600">
-                                        <div class="flex items-center justify-between mb-4">
-                                            <h4 class="text-sm font-semibold text-green-400 flex items-center gap-2">
-                                                <i data-lucide="check-circle" class="w-4 h-4"></i>
-                                                Concluído
-                                            </h4>
-                                        </div>
-                                        <div id="subject-kanban-done" class="min-h-40 space-y-3">
-                                            <div class="text-center py-8 text-zinc-500">
-                                                <i data-lucide="check" class="w-6 h-6 mx-auto mb-2 opacity-50"></i>
-                                                <p class="text-xs">Nenhuma tarefa</p>
-                                            </div>
-                                        </div>
-                                    </div>
                                 </div>
                             </div>
                         </div>
