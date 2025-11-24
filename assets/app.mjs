@@ -29,8 +29,55 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
             serverTimestamp,
             arrayUnion,
             arrayRemove,
-            writeBatch
+            writeBatch,
+            getDocs
         } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+// Diagnostic wrapper: detect addEventListener/removeEventListener calls where the
+// listener argument is undefined or not callable. This helps find places that
+// accidentally pass options as the second argument or otherwise register an
+// invalid listener (which leads to errors like "reading 'handleEvent'").
+(function(){
+    try {
+        const origAdd = EventTarget.prototype.addEventListener;
+        const origRemove = EventTarget.prototype.removeEventListener;
+
+        EventTarget.prototype.addEventListener = function(type, listener, options) {
+            try {
+                if (typeof listener === 'undefined' || listener === null) {
+                    console.warn('DIAG: addEventListener called with undefined/null listener', { target: this, type, options });
+                    try { console.trace(); } catch(_) {}
+                    window.__diag_bad_listeners = window.__diag_bad_listeners || [];
+                    window.__diag_bad_listeners.push({ when: Date.now(), action: 'add', type, options, stack: (new Error()).stack });
+                } else if (typeof listener !== 'function' && !(typeof listener === 'object' && typeof listener.handleEvent === 'function')) {
+                    // listener is neither a function nor an object with handleEvent
+                    console.warn('DIAG: addEventListener listener is not function and lacks handleEvent', { target: this, type, listener, options });
+                    try { console.trace(); } catch(_) {}
+                    window.__diag_bad_listeners = window.__diag_bad_listeners || [];
+                    window.__diag_bad_listeners.push({ when: Date.now(), action: 'add_invalid', type, listener, options, stack: (new Error()).stack });
+                }
+            } catch (err) {
+                // swallow
+            }
+            return origAdd.call(this, type, listener, options);
+        };
+
+        EventTarget.prototype.removeEventListener = function(type, listener, options) {
+            try {
+                if (typeof listener === 'undefined' || listener === null) {
+                    console.warn('DIAG: removeEventListener called with undefined/null listener', { target: this, type, options });
+                    try { console.trace(); } catch(_) {}
+                    window.__diag_bad_listeners = window.__diag_bad_listeners || [];
+                    window.__diag_bad_listeners.push({ when: Date.now(), action: 'remove', type, options, stack: (new Error()).stack });
+                }
+            } catch (err) {}
+            return origRemove.call(this, type, listener, options);
+        };
+    } catch (err) {
+        // If environment doesn't allow monkey-patching, ignore
+        console.warn('DIAG: failed to install event listener diagnostics', err);
+    }
+})();
 
 
         const firebaseConfig = {
@@ -50,6 +97,14 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
         let allTasks = [];
         let allProjects = [];
         let allSubjects = [];
+        let allAgencyProspects = [];
+        let unsubscribeAgencyProspects;
+        let currentAgencyTab = 'projects';
+        const prospectsPerPage = 8; // Novo
+        let currentProspectPage = 1; // Novo
+        let currentProspectFilter = 'todos'; // Novo
+        let currentProspectSearch = ''; // Novo
+        let currentProspectSort = 'createdAt'; // Novo
 
         let allNotifications = [];
         let unsubscribeNotifications;
@@ -72,6 +127,14 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
         let automationRunning = false;
         let alarmAudioContext;
         let sentAlarmsForToday = [];
+
+        let allAgencyClients = [];
+        let allAgencyTransactions = [];
+        let unsubscribeAgencyClients, unsubscribeAgencyTransactions;
+        let currentFinanceDate = new Date();
+        let agencyChartInstance;
+        let currentChartType = 'Receitas vs Despesas';
+        let currentFinanceFilter = 'month'; // 'month', '3-months', 'year'
 
         // 💡 SUBTITUÍDO: Novas músicas (exemplo) e variáveis do player
         const musicTracks = [
@@ -239,7 +302,6 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
                 });
             });
 
-
             document.getElementById('btn-logout').addEventListener('click', () => signOut(auth));
             document.getElementById('btn-google-login').addEventListener('click', signInWithGoogle);
             document.getElementById('form-email-login').addEventListener('submit', handleEmailLogin);
@@ -277,8 +339,6 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
                 }
             });
 
-
-
             document.getElementById('modal-btn-cancel').addEventListener('click', () => closeModal(false));
             document.getElementById('modal-btn-confirm').addEventListener('click', () => closeModal(true));
             document.getElementById('btn-close-slide-over').addEventListener('click', closeSlideOver);
@@ -287,6 +347,36 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 
             document.getElementById('btn-show-add-task-modal').addEventListener('click', showAddTaskForm);
             document.getElementById('btn-show-add-project-modal').addEventListener('click', showAddProjectForm);
+
+            const prospectView = document.getElementById('agency-prospects-view');
+    if (prospectView) {
+        // Botão principal "Novo Prospect"
+        prospectView.querySelector('#btn-show-add-prospect-modal').addEventListener('click', () => showAddProspectForm());
+
+        // Filtros Rápidos
+        prospectView.querySelector('#prospects-quick-filters').addEventListener('click', (e) => {
+            const button = e.target.closest('button');
+            if (button && button.dataset.filter) {
+                setProspectFilter(button, button.dataset.filter);
+            }
+        });
+
+        // Busca
+        prospectView.querySelector('#prospect-search-input').addEventListener('keyup', (e) => {
+            currentProspectSearch = e.target.value.toLowerCase();
+            renderProspectsPage(); // Renderiza com o novo filtro de busca
+        });
+
+        // Ordenação
+        prospectView.querySelector('#prospect-sort-select').addEventListener('change', (e) => {
+            currentProspectSort = e.target.value;
+            renderProspectsPage(); // Renderiza com a nova ordenação
+        });
+        
+        // Paginação
+        prospectView.querySelector('#prospect-pagination-prev').addEventListener('click', () => changeProspectPage(-1));
+        prospectView.querySelector('#prospect-pagination-next').addEventListener('click', () => changeProspectPage(1));
+    }
 
 
             document.getElementById('agency-sort-select').addEventListener('change', (e) => {
@@ -303,9 +393,52 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
                 changeAgencyPage(1);
             });
 
+            document.getElementById('btn-tab-agency-projects').addEventListener('click', () => showAgencyTab('projects'));
+            document.getElementById('btn-tab-agency-prospects').addEventListener('click', () => showAgencyTab('prospects'));
+            document.getElementById('btn-show-add-prospect-modal').addEventListener('click', showAddProspectForm);
+
 
             document.getElementById('btn-back-to-agency').addEventListener('click', () => showPage('agency'));
             document.getElementById('btn-show-add-project-task-modal').addEventListener('click', showAddProjectTaskForm);
+
+            document.getElementById('btn-edit-project-detail').addEventListener('click', () => {
+                if (currentProjectId) {
+                    showProjectDetails(currentProjectId); // Reutiliza a função de edição
+                }
+            });
+
+            const btnFinancePrevMonth = document.getElementById('btn-finance-prev-month');
+                if(btnFinancePrevMonth) { // Adiciona verificação para caso a página não esteja carregada
+                    btnFinancePrevMonth.addEventListener('click', () => changeFinanceMonth(-1));
+                    document.getElementById('btn-finance-next-month').addEventListener('click', () => changeFinanceMonth(1));
+                    document.getElementById('btn-show-add-transaction-modal').addEventListener('click', () => {
+                        showAddTransactionForm(); // Chama a função sem argumentos
+                    });                   
+                    document.getElementById('btn-show-manage-clients-modal').addEventListener('click', () => {
+                        showManageClientsForm();
+                    });
+                    const chartSelect = document.querySelector('#agencyFinanceChart')?.closest('.bg-zinc-800').querySelector('select');
+                    if (chartSelect) {
+                        chartSelect.addEventListener('change', (e) => {
+                            currentChartType = e.target.value;
+                            // Apenas renderiza o gráfico novamente, não a página inteira
+                            renderFinanceCharts(allAgencyTransactions); 
+                        });
+                    }
+            }
+
+            const periodSelect = document.getElementById('finance-period-select');
+                if (periodSelect) {
+                    periodSelect.addEventListener('change', (e) => {
+                        currentFinanceFilter = e.target.value;
+                        
+                        // Esconde o seletor de mês se o filtro não for "month"
+                        document.getElementById('finance-month-navigator').classList.toggle('hidden', currentFinanceFilter !== 'month');
+                        
+                        // Re-renderiza a página com o novo período
+                        renderFinancePage();
+                });
+            }
 
 
             document.getElementById('form-add-subject').addEventListener('submit', handleAddSubject);
@@ -341,6 +474,8 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
                     setFocusBackground(button.dataset.bg);
                 }
             });
+
+            
         }
 
         function toggleAuthForms(showLogin) {
@@ -441,6 +576,13 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 
         const getAgencyCollection = () => collection(db, `${getBasePath()}/agencyProjects`);
         const getAgencyDoc = (id) => doc(db, `${getBasePath()}/agencyProjects/${id}`);
+        const getAgencyProspectsCollection = () => collection(db, `${getBasePath()}/agencyProspects`);
+        const getAgencyProspectDoc = (id) => doc(db, `${getBasePath()}/agencyProspects/${id}`);
+
+        const getAgencyClientsCollection = () => collection(db, `${getBasePath()}/agencyClients`);
+        const getAgencyClientDoc = (id) => doc(db, `${getBasePath()}/agencyClients/${id}`);
+        const getAgencyTransactionsCollection = () => collection(db, `${getBasePath()}/agencyTransactions`);
+        const getAgencyTransactionDoc = (id) => doc(db, `${getBasePath()}/agencyTransactions/${id}`);
 
 
         const getProjectTasksCollection = (projectId) => collection(db, `${getAgencyDoc(projectId).path}/tasks`);
@@ -473,7 +615,15 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
             if (unsubscribeFocusHistory) unsubscribeFocusHistory();
             if (unsubscribeNotifications) unsubscribeNotifications();
             clearSubjectListeners();
+            if (unsubscribeAgencyClients) unsubscribeAgencyClients();
+            if (unsubscribeAgencyTransactions) unsubscribeAgencyTransactions();
+            if (unsubscribeAgencyProspects) unsubscribeAgencyProspects();
 
+            const prospectsQuery = query(getAgencyProspectsCollection(), orderBy('createdAt', 'desc')); // Ordena por padrão
+                unsubscribeAgencyProspects = onSnapshot(prospectsQuery, (snapshot) => {
+                    allAgencyProspects = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    renderProspectsPage(); // Chama a nova função de renderização principal
+                }, (error) => console.error("Erro ao carregar prospects:", error));
 
             const tasksQuery = query(getTasksCollection(), orderBy('createdAt', 'asc'));
             unsubscribeTasks = onSnapshot(tasksQuery, (snapshot) => {
@@ -547,7 +697,21 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
                 renderFocusHistory(history);
             }, (error) => { console.error("Erro ao carregar histórico de foco:", error) });
 
+            const clientsQuery = query(getAgencyClientsCollection(), orderBy('name', 'asc'));
+            unsubscribeAgencyClients = onSnapshot(clientsQuery, (snapshot) => {
+                allAgencyClients = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                // Se o slide-over de clientes estiver aberto, atualiza a lista
+                if (document.getElementById('client-list-in-modal')) {
+                    renderClientListInModal();
+                }
+            }, (error) => console.error("Erro ao carregar clientes:", error));
 
+            const transactionsQuery = query(getAgencyTransactionsCollection(), orderBy('date', 'desc'));
+            unsubscribeAgencyTransactions = onSnapshot(transactionsQuery, (snapshot) => {
+                allAgencyTransactions = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                // Renderiza a página financeira com os novos dados
+                renderFinancePage(); 
+            }, (error) => console.error("Erro ao carregar transações:", error));
 
             const notifQuery = query(getNotificationsCollection(), orderBy('createdAt', 'desc'));
             unsubscribeNotifications = onSnapshot(notifQuery, (snapshot) => {
@@ -558,6 +722,241 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
                 document.getElementById('notification-list').innerHTML = `<p class="p-4 text-center text-sm text-red-400">Erro ao carregar</p>`;
             });
 
+        }
+
+        /**
+ * 💡 FUNÇÃO NOVA
+ * Define o filtro rápido e atualiza a UI dos botões.
+ */
+function setProspectFilter(clickedButton, filter) {
+    currentProspectFilter = filter;
+    currentProspectPage = 1; // Reseta a página ao mudar o filtro
+
+    // Atualiza a UI dos botões
+    const filterGroup = document.getElementById('prospects-quick-filters');
+    if (filterGroup) {
+        filterGroup.querySelectorAll('button').forEach(btn => {
+            btn.classList.remove('bg-purple-500', 'text-white');
+            btn.classList.add('text-zinc-400', 'hover:text-white');
+        });
+        clickedButton.classList.add('bg-purple-500', 'text-white');
+        clickedButton.classList.remove('text-zinc-400', 'hover:text-white');
+    }
+    
+    renderProspectsPage(); // Re-renderiza a página com o filtro
+}
+
+/**
+ * 💡 FUNÇÃO NOVA
+ * Altera a página atual da paginação de prospects.
+ */
+function changeProspectPage(direction) {
+    currentProspectPage += direction;
+    // A função renderProspectsPage() vai validar os limites da página
+    renderProspectsPage();
+}
+
+/**
+ * 💡 FUNÇÃO NOVA
+ * Calcula e exibe o "tempo atrás" (ex: "há 2 dias").
+ */
+function getRelativeTime(dateString) {
+    if (!dateString) return '';
+    const date = new Date(dateString + 'T12:00:00');
+    const now = new Date();
+    const diffInSeconds = Math.floor((now - date) / 1000);
+    
+    const days = Math.floor(diffInSeconds / 86400);
+    if (days > 1) return `há ${days} dias`;
+    if (days === 1) return `há 1 dia`;
+    
+    const hours = Math.floor(diffInSeconds / 3600);
+    if (hours > 1) return `há ${hours} horas`;
+    if (hours === 1) return `há 1 hora`;
+
+    const minutes = Math.floor(diffInSeconds / 60);
+    if (minutes > 1) return `há ${minutes} min`;
+    
+    return 'agora mesmo';
+}
+
+        function showAgencyTab(tabName) {
+            currentAgencyTab = tabName;
+
+            // Controla os botões das abas
+            document.getElementById('btn-tab-agency-projects').classList.toggle('bg-blue-500', tabName === 'projects');
+            document.getElementById('btn-tab-agency-projects').classList.toggle('text-white', tabName === 'projects');
+            document.getElementById('btn-tab-agency-prospects').classList.toggle('bg-purple-500', tabName === 'prospects');
+            document.getElementById('btn-tab-agency-prospects').classList.toggle('text-white', tabName === 'prospects');
+            
+            // Controla a visibilidade do conteúdo
+            document.getElementById('agency-projects-view').classList.toggle('hidden', tabName !== 'projects');
+            document.getElementById('agency-prospects-view').classList.toggle('hidden', tabName !== 'prospects');
+            
+            // Renderiza a tabela correta (os projetos já são renderizados pelo onSnapshot)
+            if (tabName === 'prospects') {
+                renderProspectsTable(allAgencyProspects);
+            }
+        }
+
+        function getBaseChartOptions() {
+            return {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                // O "events" e o "onClick" foram removidos daqui
+                scales: {
+                    x: {
+                        stacked: false, 
+                        grid: { color: 'rgba(255, 255, 255, 0.1)' },
+                        ticks: { color: '#a1a1aa' }
+                    },
+                    y: { 
+                        stacked: false,
+                        grid: { color: 'rgba(255, 255, 255, 0.1)' },
+                        ticks: { color: '#a1a1aa' }
+                    }
+                },
+                plugins: {
+                    tooltip: {
+                        backgroundColor: '#18181b', 
+                        titleColor: '#ffffff',
+                        bodyColor: '#d4d4d8',
+                        borderColor: '#3f3f46',
+                        borderWidth: 1,
+                        callbacks: {
+                            label: function(context) {
+                                const label = context.dataset.label || '';
+                                const value = context.parsed.y || 0;
+                                return ` ${label}: ${value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`;
+                            }
+                        }
+                    },
+                    legend: {
+                        labels: {
+                            color: '#a1a1aa'
+                        }
+                    }
+                }
+            };
+        }
+
+        function renderFinanceCharts(allTransactions) {
+            const ctx = document.getElementById('agencyFinanceChart')?.getContext('2d');
+            if (!ctx) return; 
+
+            // 1. Processar os dados
+            const currentYear = currentFinanceDate.getFullYear();
+            const selectedMonth = currentFinanceDate.getMonth(); // 0-11
+            
+            const monthlyIncome = new Array(12).fill(0);
+            const monthlyExpenses = new Array(12).fill(0);
+
+            for (const tx of allTransactions) {
+                const txDate = new Date(tx.date + 'T12:00:00');
+                if (txDate.getFullYear() === currentYear) {
+                    const month = txDate.getMonth();
+                    const value = parseFloat(tx.value) || 0;
+                    if (tx.type === 'income') monthlyIncome[month] += value;
+                    else if (tx.type === 'expense') monthlyExpenses[month] += value;
+                }
+            }
+            const monthlyBalance = monthlyIncome.map((income, i) => income - monthlyExpenses[i]);
+            
+            // 2. Destruir gráfico antigo
+            if (agencyChartInstance) {
+                agencyChartInstance.destroy();
+            }
+
+            // 3. Preparar datasets e opções com base no seletor
+            let chartDatasets = [];
+            let chartOptions = getBaseChartOptions(); // Pega as opções padrão
+
+            // Cores dinâmicas para o mês selecionado
+            const incomeColors = monthlyIncome.map((_, i) => i === selectedMonth ? 'rgba(34, 197, 94, 1.0)' : 'rgba(34, 197, 94, 0.6)');
+            const expenseColors = monthlyExpenses.map((_, i) => i === selectedMonth ? 'rgba(239, 68, 68, 1.0)' : 'rgba(239, 68, 68, 0.6)');
+
+            switch (currentChartType) {
+                case 'Balanço Mensal':
+                    chartOptions.scales.x.stacked = false;
+                    chartOptions.scales.y.stacked = false;
+                    chartDatasets = [{
+                        label: 'Balanço Mensal',
+                        data: monthlyBalance,
+                        backgroundColor: monthlyBalance.map((val, i) => val >= 0 ? 
+                            (i === selectedMonth ? 'rgba(34, 197, 94, 1.0)' : 'rgba(34, 197, 94, 0.6)') : 
+                            (i === selectedMonth ? 'rgba(239, 68, 68, 1.0)' : 'rgba(239, 68, 68, 0.6)')
+                        ),
+                        borderWidth: 0
+                    }];
+                    break;
+                
+                case 'Fluxo de Caixa':
+                    chartOptions.scales.x.stacked = false;
+                    chartOptions.scales.y.stacked = false;
+                    chartDatasets = [
+                        { type: 'line', label: 'Receitas', data: monthlyIncome, borderColor: '#22c55e', backgroundColor: '#22c55e', tension: 0.1 },
+                        { type: 'line', label: 'Despesas', data: monthlyExpenses, borderColor: '#ef4444', backgroundColor: '#ef4444', tension: 0.1 }
+                    ];
+                    break;
+                    
+                case 'Receitas vs Despesas':
+                default:
+                    chartOptions.scales.x.stacked = true; // Empilha
+                    chartOptions.scales.y.stacked = true; // Empilha
+                    chartOptions.scales.yLine = { 
+                        position: 'right', 
+                        grid: { drawOnChartArea: false }, 
+                        ticks: { color: '#a1a1aa' }
+                    };
+                    chartDatasets = [
+                        { label: 'Receitas', data: monthlyIncome, backgroundColor: incomeColors, order: 2, stack: 'stack0' },
+                        { label: 'Despesas', data: monthlyExpenses, backgroundColor: expenseColors, order: 2, stack: 'stack0' },
+                        {
+                            type: 'line',
+                            label: 'Balanço (Evolução)',
+                            data: monthlyBalance,
+                            borderColor: '#3b82f6',
+                            backgroundColor: '#3b82f6',
+                            tension: 0.1,
+                            order: 1,
+                            yAxisID: 'yLine'
+                        }
+                    ];
+                    break;
+            }
+
+            // 4. Criar novo gráfico (***ESTA É A PARTE CORRIGIDA***)
+            agencyChartInstance = new Chart(ctx, {
+                type: 'bar', // Tipo base
+                data: {
+                    labels: ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'],
+                    datasets: chartDatasets // <-- Usa a variável correta
+                },
+                options: chartOptions // <-- Usa a variável correta
+            });
+            
+            // 5. Adicionar o listener de clique seguro (que já estava no seu código)
+            try {
+                const canvasEl = ctx && ctx.canvas ? ctx.canvas : null;
+                if (canvasEl) {
+                    if (canvasEl.__finance_click_handler) canvasEl.removeEventListener('click', canvasEl.__finance_click_handler);
+                    canvasEl.__finance_click_handler = (ev) => {
+                        try {
+                            const points = agencyChartInstance.getElementsAtEventForMode(ev, 'index', { intersect: false }, true);
+                            if (points && points.length > 0) {
+                                currentFinanceDate.setMonth(points[0].index);
+                                renderFinancePage();
+                            }
+                        } catch (err) {
+                            console.error('Finance chart click handler error:', err);
+                        }
+                    };
+                    canvasEl.addEventListener('click', canvasEl.__finance_click_handler);
+                }
+            } catch (err) {
+                console.warn('Could not attach finance chart canvas click handler', err);
+            }
         }
 
 
@@ -670,6 +1069,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
                 case 'dashboard': newTitle = 'Dashboard - TaskFlow'; break;
                 case 'tasks': newTitle = 'Minhas Tarefas - TaskFlow'; break;
                 case 'agency': newTitle = 'Agência (CRM) - TaskFlow'; break;
+                case 'agency-finance': newTitle = 'Agência (Financeiro) - TaskFlow'; break; // 💡 NOVO
                 case 'college': newTitle = 'Faculdade - TaskFlow'; break;
                 case 'calendar': newTitle = 'Calendário - TaskFlow'; break;
                 case 'project-detail': newTitle = 'Detalhe do Projeto - TaskFlow'; break;
@@ -711,35 +1111,461 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
                 }
                 currentProjectId = null;
             }
+            if (pageId === 'agency') {
+                // Garante que a aba correta (projetos ou prospects) seja exibida
+                showAgencyTab(currentAgencyTab); 
+            }
+            if (pageId === 'agency-finance') {
+                renderFinancePage(); // Renderiza os dados financeiros ao abrir a página
+            }
             if (pageId !== 'subject-detail') {
                 clearSubjectListeners();
                 currentSubjectId = null;
             }
         }
 
+        /**
+ * 💡 FUNÇÃO NOVA
+ * Função principal que orquestra a renderização da página de prospects
+ * (métricas, filtros, ordenação e tabela).
+ */
+function renderProspectsPage() {
+    if (!allAgencyProspects) return;
 
+    // 1. FILTRAR
+    let processedProspects = [...allAgencyProspects];
+    
+    // 1a. Filtro Rápido
+    if (currentProspectFilter === 'para_contatar') {
+        processedProspects = processedProspects.filter(p => p.status === 'para_contatar');
+    } else if (currentProspectFilter === 'com_reuniao') {
+        processedProspects = processedProspects.filter(p => p.status === 'com_reuniao');
+    }
+    
+    // 1b. Filtro de Busca
+    if (currentProspectSearch) {
+        processedProspects = processedProspects.filter(p => 
+            p.nomeFantasia.toLowerCase().includes(currentProspectSearch) ||
+            (p.pessoaConexao && p.pessoaConexao.toLowerCase().includes(currentProspectSearch)) ||
+            (p.email && p.email.toLowerCase().includes(currentProspectSearch))
+        );
+    }
 
-        function showModal(title, message) {
-            document.getElementById('modal-title').textContent = title;
-            document.getElementById('modal-message').textContent = message;
-            document.getElementById('modal-btn-confirm').classList.add('hidden');
-            document.getElementById('modal-btn-cancel').textContent = 'Fechar';
-            document.getElementById('modal-container').classList.remove('hidden');
-            document.getElementById('modal-container').classList.add('flex');
-            modalResolve = null;
+    // 2. ORDENAR
+    processedProspects.sort((a, b) => {
+        switch(currentProspectSort) {
+            case 'nomeFantasia': return a.nomeFantasia.localeCompare(b.nomeFantasia);
+            case 'status': return (a.status || '').localeCompare(b.status || '');
+            case 'createdAt':
+            default: return (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0);
         }
+    });
 
-        function showConfirmModal(title, message) {
-            document.getElementById('modal-title').textContent = title;
-            document.getElementById('modal-message').textContent = message;
-            document.getElementById('modal-btn-confirm').classList.remove('hidden');
-            document.getElementById('modal-btn-cancel').textContent = 'Cancelar';
-            document.getElementById('modal-container').classList.remove('hidden');
-            document.getElementById('modal-container').classList.add('flex');
-            return new Promise((resolve) => {
-                modalResolve = resolve;
+    // 3. ATUALIZAR MÉTRICAS (com os dados globais)
+    updateProspectMetrics(allAgencyProspects);
+
+    // 4. RENDERIZAR TABELA (com dados processados e paginação)
+    renderProspectsTable(processedProspects);
+}
+
+/**
+ * 💡 FUNÇÃO NOVA
+ * Atualiza os 4 cards de métricas.
+ */
+function updateProspectMetrics(prospects) {
+    const total = prospects.length;
+    const paraContatar = prospects.filter(p => p.status === 'para_contatar').length;
+    const comReuniao = prospects.filter(p => p.status === 'com_reuniao').length;
+    
+    const converted = prospects.filter(p => p.status === 'convertido').length;
+    const lost = prospects.filter(p => p.status === 'perdido').length;
+    const totalConcluded = converted + lost;
+    const taxaConversao = (totalConcluded > 0) ? (converted / totalConcluded) * 100 : 0;
+
+    const thisMonth = new Date().getMonth();
+    const thisYear = new Date().getFullYear();
+    const newThisMonth = prospects.filter(p => {
+        const d = p.createdAt?.toDate();
+        return d && d.getMonth() === thisMonth && d.getFullYear() === thisYear;
+    }).length;
+
+    // Atualiza HTML
+    const view = document.getElementById('agency-prospects-view');
+    if (!view) return;
+    
+    document.getElementById('metric-prospects-total').textContent = total;
+    document.getElementById('metric-prospects-total-sub').textContent = `+${newThisMonth} este mês`;
+    document.getElementById('metric-prospects-contatar').textContent = paraContatar;
+    document.getElementById('metric-prospects-reuniao').textContent = comReuniao;
+    document.getElementById('metric-prospects-conversao').textContent = `${taxaConversao.toFixed(0)}%`;
+}
+
+
+function renderProspectsTable(prospects) {
+    const tableBody = document.getElementById('prospects-table-body');
+    const template = document.getElementById('prospect-row-template');
+    if (!tableBody || !template) return;
+
+    tableBody.innerHTML = ''; // Limpa
+    
+    // 1. Lógica de Paginação
+    const totalItems = prospects.length;
+    const totalPages = Math.ceil(totalItems / prospectsPerPage) || 1;
+    if (currentProspectPage > totalPages) currentProspectPage = totalPages;
+    if (currentProspectPage < 1) currentProspectPage = 1;
+    
+    const startIndex = (currentProspectPage - 1) * prospectsPerPage;
+    const endIndex = startIndex + prospectsPerPage;
+    const paginatedProspects = prospects.slice(startIndex, endIndex);
+    
+    // 2. Estado Vazio
+    if (paginatedProspects.length === 0) {
+        tableBody.innerHTML = `
+            <tr>
+                <td colspan="9" class="p-8 text-center">
+                    <div class="flex flex-col items-center justify-center gap-3 text-zinc-500">
+                        <i data-lucide="search-slash" class="w-12 h-12 opacity-50"></i>
+                        <p>Nenhum prospect encontrado</p>
+                        <p class="text-sm">Tente ajustar seus filtros ou busca.</p>
+                        ${currentProspectFilter === 'todos' && currentProspectSearch === '' ? `
+                        <button id="btn-show-add-prospect-modal-empty"
+                            class="mt-2 py-2 px-4 bg-purple-500 hover:bg-purple-600 rounded-lg text-sm text-white font-medium transition-colors">
+                            Adicionar Prospect
+                        </button>` : ''}
+                    </div>
+                </td>
+            </tr>`;
+        // Adiciona listener para o botão de estado vazio
+        const emptyBtn = document.getElementById('btn-show-add-prospect-modal-empty');
+        if (emptyBtn) {
+            emptyBtn.addEventListener('click', () => showAddProspectForm());
+        }
+        if (typeof lucide !== 'undefined') lucide.createIcons();
+    }
+    
+    // 3. Renderizar Linhas
+    const statusStyles = {
+        'para_contatar': { text: 'Para Contatar', icon: 'phone-outgoing', color: 'bg-blue-500/20 text-blue-400' },
+        'contatado': { text: 'Contatado', icon: 'messages-square', color: 'bg-yellow-500/20 text-yellow-400' },
+        'com_reuniao': { text: 'Com Reunião', icon: 'calendar', color: 'bg-green-500/20 text-green-400' },
+        'convertido': { text: 'Convertido', icon: 'check-circle', color: 'bg-purple-500/20 text-purple-400' },
+        'perdido': { text: 'Perdido', icon: 'x-circle', color: 'bg-red-500/20 text-red-400' }
+    };
+
+    paginatedProspects.forEach(prospect => {
+        const row = template.content.cloneNode(true).firstElementChild;
+        
+        const style = statusStyles[prospect.status] || statusStyles['para_contatar'];
+        const ultimoContato = prospect.ultimoContato ? new Date(prospect.ultimoContato + 'T12:00:00').toLocaleDateString('pt-BR') : '---';
+        const ultimoContatoRel = getRelativeTime(prospect.ultimoContato);
+
+        row.querySelector('.prospect-name').textContent = prospect.nomeFantasia;
+        row.querySelector('.prospect-site span').textContent = prospect.site || '---';
+        row.querySelector('.prospect-segmento span').textContent = prospect.segmento || '---';
+        row.querySelector('.prospect-contato-nome').textContent = prospect.pessoaConexao || '---';
+        row.querySelector('.prospect-contato-cargo').textContent = prospect.cargo || '---';
+        row.querySelector('.prospect-celular').textContent = prospect.celular || '---';
+        row.querySelector('.prospect-celular-tipo span').textContent = prospect.tipoCelular || 'Celular';
+        row.querySelector('.prospect-email').textContent = prospect.email || '---';
+        row.querySelector('.prospect-proxima-acao').textContent = prospect.proximaAcao || '---';
+        row.querySelector('.prospect-ultimo-contato').textContent = ultimoContato;
+        row.querySelector('.prospect-ultimo-contato-rel').textContent = ultimoContatoRel;
+        
+        const statusEl = row.querySelector('.prospect-status');
+        statusEl.className = `prospect-status inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold ${style.color}`;
+        statusEl.querySelector('i').setAttribute('data-lucide', style.icon);
+        statusEl.querySelector('span').textContent = style.text;
+
+        // Listeners
+        row.querySelector('.btn-edit-prospect').addEventListener('click', () => showAddProspectForm(prospect.id));
+        row.querySelector('.btn-delete-prospect').addEventListener('click', async () => {
+            if (await showConfirmModal('Excluir Prospect?', `Tem certeza que deseja excluir "${prospect.nomeFantasia}"?`, 'Excluir', 'Cancelar', 'error')) {
+                try {
+                    await deleteDoc(getAgencyProspectDoc(prospect.id));
+                    showModal("Sucesso", "Prospect excluído.", "success");
+                } catch (error) { console.error("Erro ao deletar prospect:", error); }
+            }
+        });
+        
+        tableBody.appendChild(row);
+    });
+
+    // 4. Atualizar Paginação
+    updateProspectPagination(totalItems, paginatedProspects.length, startIndex);
+
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+}
+
+/**
+ * 💡 FUNÇÃO NOVA
+ * Atualiza o texto e os botões da paginação.
+ */
+function updateProspectPagination(totalItems, itemsOnPage, startIndex) {
+    const infoEl = document.getElementById('prospect-pagination-info');
+    const prevBtn = document.getElementById('prospect-pagination-prev');
+    const nextBtn = document.getElementById('prospect-pagination-next');
+    const pageNumEl = document.getElementById('prospect-page-num');
+
+    if (!infoEl) return;
+
+    if (totalItems === 0) {
+        infoEl.textContent = "Nenhum prospect";
+    } else {
+        infoEl.innerHTML = `Mostrando <span class="text-white font-semibold">${startIndex + 1} - ${startIndex + itemsOnPage}</span> de <span class="text-white font-semibold">${totalItems}</span> prospects`;
+    }
+
+    const totalPages = Math.ceil(totalItems / prospectsPerPage) || 1;
+    prevBtn.disabled = (currentProspectPage === 1);
+    nextBtn.disabled = (currentProspectPage === totalPages);
+    pageNumEl.textContent = currentProspectPage;
+}
+
+/**
+ * 💡 FUNÇÃO NOVA
+ * Mostra o formulário para adicionar ou editar um prospect.
+ */
+function showAddProspectForm(prospectId = null) {
+    const prospect = prospectId ? allAgencyProspects.find(p => p.id === prospectId) : null;
+    const isEditing = !!prospect;
+
+    const formHtml = `
+        <form id="form-save-prospect" class="flex flex-col h-full">
+            <div class="flex-1 space-y-6 overflow-y-auto p-1">
+                
+                <div class="space-y-4">
+                    <h4 class="text-md font-semibold text-purple-400">Dados Cadastrais</h4>
+                    <div>
+                        <label class="block text-sm font-medium text-zinc-300 mb-2">Nome Fantasia*</label>
+                        <input type="text" name="nomeFantasia" required class="w-full px-4 py-3 bg-zinc-700 border border-zinc-600 rounded-xl" value="${isEditing ? prospect.nomeFantasia : ''}">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-zinc-300 mb-2">Segmento</label>
+                        <input type="text" name="segmento" class="w-full px-4 py-3 bg-zinc-700 border border-zinc-600 rounded-xl" placeholder="Ex: Alimentação" value="${isEditing ? (prospect.segmento || '') : ''}">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-zinc-300 mb-2">Site</label>
+                        <input type="text" name="site" class="w-full px-4 py-3 bg-zinc-700 border border-zinc-600 rounded-xl" placeholder="https://empresa.com" value="${isEditing ? (prospect.site || '') : ''}">
+                    </div>
+                </div>
+
+                <div class="space-y-4 border-t border-zinc-700 pt-4">
+                    <h4 class="text-md font-semibold text-purple-400">Contato</h4>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-zinc-300 mb-2">Pessoa de Conexão</label>
+                            <input type="text" name="pessoaConexao" class="w-full px-4 py-3 bg-zinc-700 border border-zinc-600 rounded-xl" value="${isEditing ? (prospect.pessoaConexao || '') : ''}">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-zinc-300 mb-2">Cargo</label>
+                            <input type="text" name="cargo" class="w-full px-4 py-3 bg-zinc-700 border border-zinc-600 rounded-xl" placeholder="Ex: Diretor de Marketing" value="${isEditing ? (prospect.cargo || '') : ''}">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-zinc-300 mb-2">Celular</label>
+                            <input type="tel" name="celular" class="w-full px-4 py-3 bg-zinc-700 border border-zinc-600 rounded-xl" placeholder="(11) 99999-9999" value="${isEditing ? (prospect.celular || '') : ''}">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-zinc-300 mb-2">Tipo do Celular</label>
+                            <select name="tipoCelular" class="w-full px-4 py-3 bg-zinc-700 border border-zinc-600 rounded-xl appearance-none">
+                                <option value="WhatsApp">WhatsApp</option>
+                                <option value="Celular">Celular</option>
+                                <option value="Telefone">Telefone Fixo</option>
+                            </select>
+                        </div>
+                        <div class="col-span-2">
+                            <label class="block text-sm font-medium text-zinc-300 mb-2">E-mail</label>
+                            <input type="email" name="email" class="w-full px-4 py-3 bg-zinc-700 border border-zinc-600 rounded-xl" value="${isEditing ? (prospect.email || '') : ''}">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="space-y-4 border-t border-zinc-700 pt-4">
+                    <h4 class="text-md font-semibold text-purple-400">Prospecção</h4>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-zinc-300 mb-2">Status*</label>
+                            <select name="status" required class="w-full px-4 py-3 bg-zinc-700 border border-zinc-600 rounded-xl appearance-none">
+                                <option value="para_contatar">🔵 Para Contatar</option>
+                                <option value="contatado">🟡 Contatado (Follow-up)</option>
+                                <option value="com_reuniao">🟢 Com Reunião</option>
+                                <option value="convertido">🟣 Convertido (Cliente)</option>
+                                <option value="perdido">🔴 Perdido</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-zinc-300 mb-2">Último Contato</label>
+                            <input type="date" name="ultimoContato" class="w-full px-4 py-3 bg-zinc-700 border border-zinc-600 rounded-xl text-zinc-300" value="${isEditing ? (prospect.ultimoContato || '') : ''}">
+                        </div>
+                        <div class="col-span-2">
+                            <label class="block text-sm font-medium text-zinc-300 mb-2">Próxima Ação</I></label>
+                            <input type="text" name="proximaAcao" class="w-full px-4 py-3 bg-zinc-700 border border-zinc-600 rounded-xl" placeholder="Ex: Enviar proposta, Ligar na Segunda..." value="${isEditing ? (prospect.proximaAcao || '') : ''}">
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+            <div class="mt-auto pt-6 border-t border-zinc-700">
+                <button type="submit" class="w-full py-3 px-4 bg-purple-500 hover:bg-purple-600 rounded-xl font-semibold text-white">
+                    ${isEditing ? 'Salvar Alterações' : 'Adicionar Prospect'}
+                </button>
+            </div>
+        </form>
+    `;
+
+    openSlideOver(formHtml, isEditing ? `Editando: ${prospect.nomeFantasia}` : "Novo Prospect");
+
+    // Ativa as máscaras
+    const panel = document.getElementById('slide-over-panel');
+    const celMask = panel.querySelector('input[name="celular"]');
+    if (celMask) {
+        IMask(celMask, {
+            mask: [
+                { mask: '(00) 0000-0000' },
+                { mask: '(00) 00000-0000' }
+            ]
+        });
+    }
+
+    // Preenche os selects se estiver editando
+    if (isEditing) {
+        panel.querySelector('select[name="tipoCelular"]').value = prospect.tipoCelular || 'WhatsApp';
+        panel.querySelector('select[name="status"]').value = prospect.status || 'para_contatar';
+    }
+
+    // Listener de submit
+    document.getElementById('form-save-prospect').addEventListener('submit', (e) => {
+        handleSaveProspect(e, prospectId);
+    });
+}
+
+/**
+ * 💡 FUNÇÃO NOVA
+ * Handler para salvar (adicionar ou editar) um prospect.
+ */
+async function handleSaveProspect(e, prospectId) {
+    e.preventDefault();
+    const form = e.target;
+    const isEditing = !!prospectId;
+
+    const data = {
+        nomeFantasia: form.nomeFantasia.value,
+        segmento: form.segmento.value || null,
+        site: form.site.value || null,
+        pessoaConexao: form.pessoaConexao.value || null,
+        cargo: form.cargo.value || null,
+        celular: form.celular.value || null,
+        tipoCelular: form.tipoCelular.value,
+        email: form.email.value || null,
+        status: form.status.value,
+        ultimoContato: form.ultimoContato.value || null,
+        proximaAcao: form.proximaAcao.value || null,
+        updatedAt: serverTimestamp()
+    };
+
+    try {
+        if (isEditing) {
+            await updateDoc(getAgencyProspectDoc(prospectId), data);
+            showModal("Sucesso", "Prospect atualizado com sucesso.", "success");
+        } else {
+            data.createdAt = serverTimestamp();
+            await addDoc(getAgencyProspectsCollection(), data);
+            showModal("Sucesso", "Novo prospect adicionado!", "success");
+        }
+        closeSlideOver();
+    } catch (error) {
+        console.error("Erro ao salvar prospect:", error);
+        showModal("Erro", "Não foi possível salvar o prospect.", "error");
+    }
+}
+
+
+
+function showModal(title, message, type = 'info') { 
+    document.getElementById('modal-title').textContent = title;
+    document.getElementById('modal-message').textContent = message;
+    
+    document.getElementById('modal-btn-confirm').classList.add('hidden');
+    const cancelBtn = document.getElementById('modal-btn-cancel');
+    cancelBtn.textContent = 'Fechar';
+    
+    cancelBtn.className = "py-2 px-4 bg-zinc-700 hover:bg-zinc-600 rounded-md font-semibold";
+    
+    document.getElementById('modal-container').classList.remove('hidden');
+    document.getElementById('modal-container').classList.add('flex');
+    modalResolve = null;
+}
+
+function showConfirmModal(title, message, confirmText = 'Confirmar', cancelText = 'Cancelar', type = 'info') { // 'info', 'error'
+    document.getElementById('modal-title').textContent = title;
+    document.getElementById('modal-message').textContent = message;
+
+    const confirmBtn = document.getElementById('modal-btn-confirm');
+    const cancelBtn = document.getElementById('modal-btn-cancel');
+
+    confirmBtn.textContent = confirmText;
+    cancelBtn.textContent = cancelText;
+
+    confirmBtn.className = "py-2 px-4 rounded-md font-semibold transition-colors";
+    cancelBtn.className = "py-2 px-4 bg-zinc-700 hover:bg-zinc-600 rounded-md font-semibold transition-colors";
+
+    if (type === 'error') {
+        confirmBtn.classList.add('bg-red-600', 'hover:bg-red-700', 'text-white');
+    } else {
+        confirmBtn.classList.add('bg-blue-500', 'hover:bg-blue-600', 'text-white');
+    }
+
+    confirmBtn.classList.remove('hidden');
+    cancelBtn.classList.remove('hidden');
+    
+    document.getElementById('modal-container').classList.remove('hidden');
+    document.getElementById('modal-container').classList.add('flex');
+    
+    return new Promise((resolve) => {
+        modalResolve = resolve;
+    });
+}
+
+        /**
+ * Exibe um modal com botões de escolha personalizados.
+ * @param {string} title - O título do modal.
+ * @param {string} message - A mensagem do modal.
+ * @param {Array<object>} buttons - Array de objetos: [{ text, value, class }]
+ * @returns {Promise<string>} - Resolve com o 'value' do botão clicado (ex: 'one', 'all', 'cancel').
+ */
+function showCustomConfirmModal(title, message, buttons) {
+    const modalContainer = document.getElementById('modal-container');
+    const modalTitle = document.getElementById('modal-title');
+    const modalMessage = document.getElementById('modal-message');
+    const modalActions = document.getElementById('modal-actions');
+    
+    // Esconde os botões padrão do HTML (caso existam) e limpa o container
+    modalActions.innerHTML = '';
+    document.getElementById('modal-btn-confirm')?.classList.add('hidden');
+    document.getElementById('modal-btn-cancel')?.classList.add('hidden');
+
+    modalTitle.textContent = title;
+    modalMessage.textContent = message;
+
+    return new Promise((resolve) => {
+        buttons.forEach(buttonInfo => {
+            const button = document.createElement('button');
+            button.textContent = buttonInfo.text;
+            button.className = buttonInfo.class; // Aplica classes de estilo
+            
+            button.addEventListener('click', () => {
+                // Esconde o modal e resolve a promessa com o valor
+                modalContainer.classList.add('hidden');
+                modalContainer.classList.remove('flex');
+                resolve(buttonInfo.value);
             });
-        }
+            
+            modalActions.appendChild(button);
+        });
+        
+        // Exibe o modal
+        modalContainer.classList.remove('hidden');
+        modalContainer.classList.add('flex');
+    });
+}
 
         function closeModal(confirmed) {
             document.getElementById('modal-container').classList.add('hidden');
@@ -1665,197 +2491,398 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
             }
         }
 
+function showAddProjectForm() {
+    // Cria as opções do <select> a partir da lista de clientes
+    let clientOptions = allAgencyClients.map(client => 
+        `<option value="${client.id}">${client.name}</option>`
+    ).join('');
 
+    // 💡 CORREÇÃO: Removi o <h3 class="text-xl..."> daqui, 
+    // pois a função openSlideOver() já adiciona o título.
+    const formHtml = `
+        <div class="flex flex-col h-full">
+            <div class="flex-1 space-y-6 overflow-y-auto p-1">
+                <form id="form-add-project-modal" class="space-y-6">
+                    <div>
+                        <label for="projectTitleModal" class="block text-sm font-medium text-zinc-300 mb-3 flex items-center gap-2">
+                            <i data-lucide="folder" class="w-4 h-4 text-blue-400"></i>
+                            Nome do Projeto
+                        </label>
+                        <input type="text" id="projectTitleModal" name="projectTitle" required 
+                                class="w-full px-4 py-3 bg-zinc-800 border border-zinc-600 rounded-xl text-white placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                                placeholder="Ex: Website Institucional - Empresa X">
+                    </div>
+                    
+                    <div>
+                        <label for="projectClientModal" class="block text-sm font-medium text-zinc-300 mb-3 flex items-center gap-2">
+                            <i data-lucide="users" class="w-4 h-4 text-purple-400"></i>
+                            Cliente
+                        </label>
+                        <div class="relative">
+                            <i data-lucide="user" class="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-zinc-400"></i>
+                            <select id="projectClientModal" name="projectClientId" required 
+                                    class="w-full pl-10 pr-4 py-3 bg-zinc-800 border border-zinc-600 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all appearance-none">
+                                <option value="">Selecione um cliente</option>
+                                ${clientOptions}
+                            </select>
+                            <i data-lucide="chevron-down" class="w-4 h-4 absolute right-3 top-1/2 transform -translate-y-1/2 text-zinc-400 pointer-events-none"></i>
+                        </div>
+                    </div>
 
-        function showAddProjectForm() {
-            const formHtml = `
-                <form id="form-add-project-modal" class="space-y-4">
-                    <div>
-                        <label for="projectTitleModal" class="block text-sm font-medium text-zinc-300 mb-1">Nome do Projeto</label>
-                        <input type="text" id="projectTitleModal" name="projectTitle" required class="w-full px-3 py-2 bg-zinc-700 border border-zinc-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Ex: Website Institucional">
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <div>
+                            <label for="projectDueDateModal" class="block text-sm font-medium text-zinc-300 mb-3 flex items-center gap-2">
+                                <i data-lucide="calendar" class="w-4 h-4 text-green-400"></i>
+                                Prazo de Entrega
+                            </label>
+                            <div class="relative">
+                                <i data-lucide="calendar" class="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-zinc-400"></i>
+                                <input type="date" id="projectDueDateModal" name="projectDueDate" 
+                                        class="w-full pl-10 pr-4 py-3 bg-zinc-800 border border-zinc-600 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all">
+                            </div>
+                        </div>
+                        
+                        <div>
+                            <label for="projectBudgetModal" class="block text-sm font-medium text-zinc-300 mb-3 flex items-center gap-2">
+                                <i data-lucide="dollar-sign" class="w-4 h-4 text-yellow-400"></i>
+                                Orçamento (opcional)
+                            </label>
+                            <div class="relative">
+                                <span class="absolute left-3 top-1/2 transform -translate-y-1/2 text-zinc-400">R$</span>
+                                <input type="text" id="projectBudgetModal" name="projectBudget" 
+                                        class="w-full pl-10 pr-4 py-3 bg-zinc-800 border border-zinc-600 rounded-xl text-white placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                                        placeholder="0,00">
+                            </div>
+                        </div>
                     </div>
+
                     <div>
-                        <label for="projectClientModal" class="block text-sm font-medium text-zinc-300 mb-1">Cliente</label>
-                        <input type="text" id="projectClientModal" name="projectClient" required class="w-full px-3 py-2 bg-zinc-700 border border-zinc-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Ex: Empresa X">
+                        <label class="block text-sm font-medium text-zinc-300 mb-3 flex items-center gap-2">
+                            <i data-lucide="tag" class="w-4 h-4 text-orange-400"></i>
+                            Categoria do Projeto
+                        </label>
+                        <div class="grid grid-cols-2 gap-3">
+                            <label class="flex-1">
+                                <input type="radio" name="projectCategory" value="website" class="hidden peer" checked>
+                                <div class="w-full p-4 text-center bg-zinc-800 border border-zinc-600 rounded-xl cursor-pointer peer-checked:bg-blue-500/20 peer-checked:border-blue-500 peer-checked:text-blue-400 transition-all duration-300 hover:border-zinc-500">
+                                    <div class="w-8 h-8 rounded-lg bg-blue-500/20 flex items-center justify-center mx-auto mb-2 peer-checked:bg-blue-500">
+                                        <i data-lucide="globe" class="w-4 h-4 text-blue-400 peer-checked:text-white"></i>
+                                    </div>
+                                    <span class="text-sm font-medium block">Website</span>
+                                </div>
+                            </label>
+                            <label class="flex-1">
+                                <input type="radio" name="projectCategory" value="branding" class="hidden peer">
+                                <div class="w-full p-4 text-center bg-zinc-800 border border-zinc-600 rounded-xl cursor-pointer peer-checked:bg-purple-500/20 peer-checked:border-purple-500 peer-checked:text-purple-400 transition-all duration-300 hover:border-zinc-500">
+                                    <div class="w-8 h-8 rounded-lg bg-purple-500/20 flex items-center justify-center mx-auto mb-2 peer-checked:bg-purple-500">
+                                        <i data-lucide="palette" class="w-4 h-4 text-purple-400 peer-checked:text-white"></i>
+                                    </div>
+                                    <span class="text-sm font-medium block">Branding</span>
+                                </div>
+                            </label>
+                            <label class="flex-1">
+                                <input type="radio" name="projectCategory" value="social" class="hidden peer">
+                                <div class="w-full p-4 text-center bg-zinc-800 border border-zinc-600 rounded-xl cursor-pointer peer-checked:bg-pink-500/20 peer-checked:border-pink-500 peer-checked:text-pink-400 transition-all duration-300 hover:border-zinc-500">
+                                    <div class="w-8 h-8 rounded-lg bg-pink-500/20 flex items-center justify-center mx-auto mb-2 peer-checked:bg-pink-500">
+                                        <i data-lucide="share-2" class="w-4 h-4 text-pink-400 peer-checked:text-white"></i>
+                                    </div>
+                                    <span class="text-sm font-medium block">Social Media</span>
+                                </div>
+                            </label>
+                            <label class="flex-1">
+                                <input type="radio" name="projectCategory" value="other" class="hidden peer">
+                                <div class="w-full p-4 text-center bg-zinc-800 border border-zinc-600 rounded-xl cursor-pointer peer-checked:bg-gray-500/20 peer-checked:border-gray-500 peer-checked:text-gray-400 transition-all duration-300 hover:border-zinc-500">
+                                    <div class="w-8 h-8 rounded-lg bg-gray-500/20 flex items-center justify-center mx-auto mb-2 peer-checked:bg-gray-500">
+                                        <i data-lucide="folder" class="w-4 h-4 text-gray-400 peer-checked:text-white"></i>
+                                    </div>
+                                    <span class="text-sm font-medium block">Outro</span>
+                                </div>
+                            </label>
+                        </div>
                     </div>
+
                     <div>
-                        <label for="projectDueDateModal" class="block text-sm font-medium text-zinc-300 mb-1">Prazo</label>
-                        <input type="date" id="projectDueDateModal" name="projectDueDate" class="w-full px-3 py-2 bg-zinc-700 border border-zinc-600 rounded-md text-zinc-300">
+                        <label for="projectDescriptionModal" class="block text-sm font-medium text-zinc-300 mb-3 flex items-center gap-2">
+                            <i data-lucide="file-text" class="w-4 h-4 text-green-400"></i>
+                            Descrição (opcional)
+                        </label>
+                        <textarea id="projectDescriptionModal" name="projectDescription" rows="3"
+                                class="w-full px-4 py-3 bg-zinc-800 border border-zinc-600 rounded-xl text-white placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all resize-none"
+                                placeholder="Descreva brevemente o objetivo do projeto..."></textarea>
                     </div>
-                    <button type="submit" class="w-full py-2 px-4 bg-blue-500 hover:bg-blue-600 rounded-md font-semibold transition-colors flex items-center justify-center gap-2">
-                        <i data-lucide="plus" class="w-5 h-5"></i> Salvar Projeto
-                    </button>
+
+                    <div>
+                        <label class="block text-sm font-medium text-zinc-300 mb-3 flex items-center gap-2">
+                            <i data-lucide="flag" class="w-4 h-4 text-red-400"></i>
+                            Prioridade
+                        </label>
+                        <div class="flex gap-3">
+                            <label class="flex-1">
+                                <input type="radio" name="projectPriority" value="low" class="hidden peer">
+                                <div class="w-full p-3 text-center bg-zinc-800 border border-zinc-600 rounded-xl cursor-pointer peer-checked:bg-green-500/20 peer-checked:border-green-500 peer-checked:text-green-400 transition-all duration-300 hover:border-zinc-500">
+                                    <span class="text-sm font-medium">Baixa</span>
+                                </div>
+                            </label>
+                            <label class="flex-1">
+                                <input type="radio" name="projectPriority" value="medium" class="hidden peer" checked>
+                                <div class="w-full p-3 text-center bg-zinc-800 border border-zinc-600 rounded-xl cursor-pointer peer-checked:bg-yellow-500/20 peer-checked:border-yellow-500 peer-checked:text-yellow-400 transition-all duration-300 hover:border-zinc-500">
+                                    <span class="text-sm font-medium">Média</span>
+                                </div>
+                            </label>
+                            <label class="flex-1">
+                                <input type="radio" name="projectPriority" value="high" class="hidden peer">
+                                <div class="w-full p-3 text-center bg-zinc-800 border border-zinc-600 rounded-xl cursor-pointer peer-checked:bg-red-500/20 peer-checked:border-red-500 peer-checked:text-red-400 transition-all duration-300 hover:border-zinc-500">
+                                    <span class="text-sm font-medium">Alta</span>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
                 </form>
-            `;
-            openSlideOver(formHtml, "Adicionar Novo Projeto");
+            </div>
 
-            document.getElementById('form-add-project-modal').addEventListener('submit', handleAddProjectModal);
-        }
+            <div class="mt-auto pt-6 border-t border-zinc-700">
+                <div class="flex gap-3">
+                    <button type="button" id="btn-cancel-add-project"
+                            class="flex-1 py-3 px-4 bg-zinc-700 hover:bg-zinc-600 rounded-xl font-semibold transition-colors duration-300 flex items-center justify-center gap-2">
+                        <i data-lucide="x" class="w-5 h-5"></i>
+                        Cancelar
+                    </button>
+                    <button type="submit" form="form-add-project-modal"
+                            class="flex-1 py-3 px-4 bg-blue-500 hover:bg-blue-600 rounded-xl font-semibold text-white transition-all duration-300 flex items-center justify-center gap-2 group">
+                        <i data-lucide="plus" class="w-5 h-5 group-hover:scale-110 transition-transform"></i>
+                        Criar Projeto
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    openSlideOver(formHtml, "Novo Projeto"); // Título é definido aqui
 
-        async function handleAddProjectModal(e) {
-            e.preventDefault();
-            const form = e.target;
-            const title = form.projectTitle.value;
-            const client = form.projectClient.value;
-            const dueDate = form.projectDueDate.value;
+    // 💡 CORREÇÃO: Passa a instância da máscara para o handler
+    const form = document.getElementById('form-add-project-modal');
+    const budgetInput = document.getElementById('projectBudgetModal');
+    let budgetMask;
 
-            if (!title || !client || !userId) return;
-
-            try {
-                await addDoc(getAgencyCollection(), {
-                    title,
-                    client,
-                    dueDate: dueDate || null,
-                    status: 'potential',
-                    createdAt: serverTimestamp()
-                });
-                form.reset();
-                closeSlideOver();
-            } catch (error) {
-                console.error("Erro ao adicionar projeto:", error);
-                showModal("Erro", "Não foi possível adicionar o projeto.");
+    if (budgetInput && typeof IMask !== 'undefined') {
+        budgetMask = IMask(budgetInput, {
+            mask: 'R$ num',
+            blocks: {
+                num: {
+                    mask: Number,
+                    scale: 2,
+                    radix: ',',
+                    thousandsSeparator: '.',
+                    padFractionalZeros: true,
+                    normalizeZeros: true,
+                    min: 0
+                }
             }
+        });
+    }
+
+    if (form) {
+        // Passa 'budgetMask' para a função de salvar
+        form.addEventListener('submit', (e) => handleAddProjectModal(e, budgetMask)); 
+    }
+    
+    // 💡 CORREÇÃO: Adiciona listener para o botão "Cancelar"
+    const cancelBtn = document.getElementById('btn-cancel-add-project');
+    if (cancelBtn) {
+        cancelBtn.addEventListener('click', closeSlideOver);
+    }
+}
+
+async function handleAddProjectModal(e, budgetMask) { // Recebe 'budgetMask'
+    e.preventDefault();
+    const form = e.target;
+    
+    // 💡 CORREÇÃO: Pega o nome do cliente do <select>
+    const clientSelect = form.projectClientId;
+    const clientId = clientSelect.value;
+    const clientName = clientSelect.options[clientSelect.selectedIndex].text;
+    
+    // 💡 CORREÇÃO: Lê o valor "limpo" da máscara
+    let budgetValue = 0;
+    if (budgetMask && budgetMask.unmaskedValue) {
+        budgetValue = parseFloat(budgetMask.unmaskedValue) || 0;
+    }
+    
+    const projectData = {
+        title: form.projectTitle.value,
+        clientId: clientId,
+        clientName: clientName, // Salva o nome para a tabela
+        dueDate: form.projectDueDate.value || null,
+        budget: budgetValue,
+        category: form.projectCategory.value || 'website',
+        priority: form.projectPriority.value || 'medium',
+        description: form.projectDescription.value || '',
+        status: 'active', // 'active' está correto de acordo com seu código
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+    };
+
+    // Validação
+    if (!projectData.title || !projectData.clientId) {
+        showModal("Erro", "Nome do Projeto e Cliente são obrigatórios.", "error");
+        return;
+    }
+    
+    try {
+        // 💡 CORREÇÃO: Erro de nome de função
+        await addDoc(getAgencyCollection(), projectData); 
+        form.reset();
+        closeSlideOver();
+        showModal("Sucesso", "Projeto criado com sucesso!", "success");
+    } catch (error) {
+        console.error("Erro ao criar projeto:", error);
+        showModal("Erro", "Não foi possível criar o projeto.", "error");
+    }
+}
+function renderAgencyTable(projects) {
+    const tableBody = document.getElementById('agency-table-body');
+    if (!tableBody) return;
+
+    // --- (Lógica de Ordenação e Paginação - permanece igual) ---
+    let sortedProjects = [...projects];
+    sortedProjects.sort((a, b) => {
+        switch (currentSort) {
+            case 'title': return a.title.localeCompare(b.title);
+            case 'status': return (a.status || '').localeCompare(b.status || '');
+            case 'dueDate':
+                if (!a.dueDate) return 1; if (!b.dueDate) return -1;
+                return new Date(a.dueDate) - new Date(b.dueDate);
+            case 'createdAt':
+            default: return (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0);
         }
+    });
 
-        function renderAgencyTable(projects) {
-            const tableBody = document.getElementById('agency-table-body');
-            if (!tableBody) return;
+    const totalProjects = sortedProjects.length;
+    const totalPages = Math.ceil(totalProjects / itemsPerPage) || 1;
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    const endIndex = startIndex + itemsPerPage;
+    const paginatedProjects = sortedProjects.slice(startIndex, endIndex);
+    // --- (Fim da Lógica de Ordenação/Paginação) ---
+
+    tableBody.innerHTML = '';
+
+    // --- (Mapas de Status - permanecem iguais) ---
+    const statusLabels = { potential: 'Potencial', active: 'Ativo', approved: 'Aprovado' };
+    const statusColors = { potential: 'text-purple-400', active: 'text-blue-400', approved: 'text-green-400' };
+
+    // 💡 MAPAS PARA OS NOVOS CAMPOS
+    const priorityLabels = { low: 'Baixa', medium: 'Média', high: 'Alta' };
+    const priorityColors = { low: 'text-green-400', medium: 'text-yellow-400', high: 'text-red-400' };
+    const formatBRL = (value) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
 
-            let sortedProjects = [...projects];
-            sortedProjects.sort((a, b) => {
-                switch (currentSort) {
-                    case 'title':
-                        return a.title.localeCompare(b.title);
-                    case 'status':
-                        return (a.status || '').localeCompare(b.status || '');
-                    case 'dueDate':
-                        if (!a.dueDate) return 1;
-                        if (!b.dueDate) return -1;
-                        return new Date(a.dueDate) - new Date(b.dueDate);
-                    case 'createdAt':
-                    default:
-                        return (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0);
+    if (paginatedProjects.length === 0 && totalProjects === 0) {
+        tableBody.innerHTML = `<tr><td colspan="8" class="p-8 text-center text-zinc-500">
+            Nenhum projeto cadastrado ainda.
+         </td></tr>`; // 💡 Colspan atualizado para 8
+    } else {
+        paginatedProjects.forEach(project => {
+            const tr = document.createElement('tr');
+            tr.className = `border-b border-zinc-700 hover:bg-zinc-700 cursor-pointer`;
+
+            // ... (lógica de progresso permanece igual)
+            const tasks = allProjectTasks[project.id] || [];
+            const totalTasks = tasks.length;
+            let progress = 0;
+            if (totalTasks > 0) {
+                const doneTasks = tasks.filter(t => t.status === 'done').length;
+                progress = Math.round((doneTasks / totalTasks) * 100);
+            }
+            
+            // 💡 NOVOS CAMPOS
+            const priority = project.priority || 'medium';
+            const budget = project.budget || 0;
+
+            // 💡 LINHA DA TABELA ATUALIZADA
+            tr.innerHTML = `
+                <td class="p-4 font-medium">${project.title}</td>
+                <td class="p-4 text-zinc-400">${project.clientName || 'N/A'}</td>
+                
+                <td class="p-4 font-medium ${budget > 0 ? 'text-green-400' : 'text-zinc-500'}">
+                    ${budget > 0 ? formatBRL(budget) : '---'}
+                </td>
+                
+                <td class="p-4 text-zinc-400">
+                    ${project.dueDate ? new Date(project.dueDate + 'T12:00:00').toLocaleDateString('pt-BR') : 'N/A'}
+                </td>
+                <td class="p-4 font-medium ${statusColors[project.status] || ''}">
+                    ${statusLabels[project.status] || project.status}
+                </td>
+
+                <td class="p-4 font-medium ${priorityColors[priority]}">
+                    ${priorityLabels[priority]}
+                </td>
+                
+                <td class="p-4 text-zinc-400 align-middle">
+                    <div class="flex items-center gap-2">
+                        <div class="w-full bg-zinc-600 rounded-full h-2.5">
+                            <div class="bg-blue-500 h-2.5 rounded-full" style="width: ${progress}%"></div>
+                        </div>
+                        <span class="text-xs font-medium text-zinc-300">${progress}%</span>
+                    </div>
+                </td>
+                <td class="p-4 text-right whitespace-nowrap">
+                    <button data-edit-id="${project.id}" class="text-zinc-400 hover:text-blue-500 p-1">
+                        <i data-lucide="pencil" class="w-4 h-4 pointer-events-none"></i>
+                    </button>
+                    <button data-delete-id="${project.id}" class="text-zinc-400 hover:text-red-500 p-1">
+                        <i data-lucide="trash-2" class="w-4 h-4 pointer-events-none"></i>
+                    </button>
+                </td>
+            `;
+
+            // --- (Listeners - permanecem iguais) ---
+            tr.addEventListener('click', (e) => {
+                if (e.target.closest('button')) return;
+                showProjectDetailPage(project.id);
+            });
+            tr.querySelector(`[data-edit-id="${project.id}"]`).addEventListener('click', (e) => {
+                e.stopPropagation();
+                showProjectDetails(project.id);
+            });
+            tr.querySelector(`[data-delete-id="${project.id}"]`).addEventListener('click', async (e) => {
+                e.stopPropagation();
+                if (await showConfirmModal('Excluir Projeto?', 'Tem certeza que deseja excluir este projeto e todas as suas tarefas?')) {
+                    try {
+                        await deleteDoc(getAgencyDoc(project.id));
+                    } catch (error) {
+                        console.error("Erro ao deletar projeto:", error);
+                        showModal("Erro", "Não foi possível excluir o projeto.");
+                    }
                 }
             });
 
+            tableBody.appendChild(tr);
+        });
+    }
 
-            const totalProjects = sortedProjects.length;
-            const totalPages = Math.ceil(totalProjects / itemsPerPage) || 1;
-            const startIndex = (currentPage - 1) * itemsPerPage;
-            const endIndex = startIndex + itemsPerPage;
-            const paginatedProjects = sortedProjects.slice(startIndex, endIndex);
+    // --- (Paginação - permanece igual) ---
+    const paginationInfo = document.getElementById('agency-pagination-info');
+    const prevBtn = document.getElementById('btn-agency-prev');
+    const nextBtn = document.getElementById('btn-agency-next');
+    const pageNum = document.getElementById('agency-page-num');
 
+    if (totalProjects > 0) {
+        const shownStart = startIndex + 1;
+        const shownEnd = startIndex + paginatedProjects.length;
+        paginationInfo.innerHTML = `Mostrando <span class="text-white font-semibold">${shownStart}-${shownEnd}</span> de <span class="text-white font-semibold">${totalProjects}</span> projetos`;
+    } else {
+        paginationInfo.innerHTML = "Nenhum projeto";
+    }
 
-            tableBody.innerHTML = '';
+    prevBtn.disabled = (currentPage === 1);
+    nextBtn.disabled = (currentPage === totalPages || totalPages === 0);
+    pageNum.textContent = currentPage;
 
-            const statusLabels = {
-                potential: 'Potencial',
-                active: 'Ativo',
-                approved: 'Aprovado'
-            };
-            const statusColors = {
-                potential: 'text-purple-400',
-                active: 'text-blue-400',
-                approved: 'text-green-400'
-            };
-
-            if (paginatedProjects.length === 0 && totalProjects === 0) {
-                tableBody.innerHTML = `<tr><td colspan="6" class="p-8 text-center text-zinc-500">
-                    Nenhum projeto cadastrado ainda.
-                 </td></tr>`;
-            } else {
-                paginatedProjects.forEach(project => {
-                    const tr = document.createElement('tr');
-                    tr.className = `border-b border-zinc-700 hover:bg-zinc-700 cursor-pointer`;
-
-
-                    const tasks = allProjectTasks[project.id] || [];
-                    const totalTasks = tasks.length;
-                    let progress = 0;
-                    if (totalTasks > 0) {
-                        const doneTasks = tasks.filter(t => t.status === 'done').length;
-                        progress = Math.round((doneTasks / totalTasks) * 100);
-                    }
-
-                    tr.innerHTML = `
-                        <td class="p-4 font-medium">${project.title}</td>
-                        <td class="p-4 text-zinc-400">${project.client}</td>
-                        <td class="p-4 text-zinc-400">
-                            ${project.dueDate ? new Date(project.dueDate + 'T12:00:00').toLocaleDateString('pt-BR') : 'N/A'}
-                        </td>
-                        <td class="p-4 font-medium ${statusColors[project.status] || ''}">
-                            ${statusLabels[project.status] || project.status}
-                        </td>
-
-
-                        <td class="p-4 text-zinc-400 align-middle">
-                            <div class="flex items-center gap-2">
-                                <div class="w-full bg-zinc-600 rounded-full h-2.5">
-                                    <div class="bg-blue-500 h-2.5 rounded-full" style="width: ${progress}%"></div>
-                                </div>
-                                <span class="text-xs font-medium text-zinc-300">${progress}%</span>
-                            </div>
-                        </td>
-
-                        <td class="p-4 text-right whitespace-nowrap">
-                            <button data-edit-id="${project.id}" class="text-zinc-400 hover:text-blue-500 p-1">
-                                <i data-lucide="pencil" class="w-4 h-4 pointer-events-none"></i>
-                            </button>
-                            <button data-delete-id="${project.id}" class="text-zinc-400 hover:text-red-500 p-1">
-                                <i data-lucide="trash-2" class="w-4 h-4 pointer-events-none"></i>
-                            </button>
-                        </td>
-                    `;
-
-
-                    tr.addEventListener('click', (e) => {
-                        if (e.target.closest('button')) return;
-                        showProjectDetailPage(project.id);
-                    });
-                    tr.querySelector(`[data-edit-id="${project.id}"]`).addEventListener('click', (e) => {
-                        e.stopPropagation();
-                        showProjectDetails(project.id);
-                    });
-                    tr.querySelector(`[data-delete-id="${project.id}"]`).addEventListener('click', async (e) => {
-                        e.stopPropagation();
-                        if (await showConfirmModal('Excluir Projeto?', 'Tem certeza que deseja excluir este projeto e todas as suas tarefas?')) {
-                            try {
-
-                                await deleteDoc(getAgencyDoc(project.id));
-                            } catch (error) {
-                                console.error("Erro ao deletar projeto:", error);
-                                showModal("Erro", "Não foi possível excluir o projeto.");
-                            }
-                        }
-                    });
-
-                    tableBody.appendChild(tr);
-                });
-            }
-
-
-            const paginationInfo = document.getElementById('agency-pagination-info');
-            const prevBtn = document.getElementById('btn-agency-prev');
-            const nextBtn = document.getElementById('btn-agency-next');
-            const pageNum = document.getElementById('agency-page-num');
-
-            if (totalProjects > 0) {
-                const shownStart = startIndex + 1;
-                const shownEnd = startIndex + paginatedProjects.length;
-                paginationInfo.innerHTML = `Mostrando <span class="text-white font-semibold">${shownStart}-${shownEnd}</span> de <span class="text-white font-semibold">${totalProjects}</span> projetos`;
-            } else {
-                paginationInfo.innerHTML = "Nenhum projeto";
-            }
-
-            prevBtn.disabled = (currentPage === 1);
-            nextBtn.disabled = (currentPage === totalPages || totalPages === 0);
-            pageNum.textContent = currentPage;
-
-            if (typeof lucide !== 'undefined') {
-                lucide.createIcons();
-            }
-        }
+    if (typeof lucide !== 'undefined') {
+        lucide.createIcons();
+    }
+}
 
         async function updateProjectStatus(projectId, newStatus) {
             try {
@@ -1868,123 +2895,357 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
             }
         }
 
-        function showProjectDetails(projectId) {
-            const project = allProjects.find(p => p.id === projectId);
-            if (!project) {
-                showModal("Erro", "Projeto não encontrado.");
-                return;
-            }
+function showProjectDetails(projectId) {
+    const project = allProjects.find(p => p.id === projectId);
+    if (!project) {
+        showModal("Erro", "Projeto não encontrado.", "error");
+        return;
+    }
 
+    // Cria as opções do <select> de clientes e marca o correto
+    let clientOptions = allAgencyClients.map(client => 
+        `<option value="${client.id}" ${client.id === project.clientId ? 'selected' : ''}>
+            ${client.name}
+        </option>`
+    ).join('');
 
-            const tasks = allProjectTasks[projectId] || [];
-            const totalTasks = tasks.length;
-            let progress = 0;
-            let doneTasksCount = 0;
-            if (totalTasks > 0) {
-                doneTasksCount = tasks.filter(t => t.status === 'done').length;
-                progress = Math.round((doneTasksCount / totalTasks) * 100);
-            }
+    // Converte o orçamento (ex: 25000) para o formato da máscara (2500000)
+    const budgetValueForMask = (project.budget || 0) * 100;
 
-            const detailsHtml = `
-                <form id="form-save-project-details" class="space-y-4">
+    const detailsHtml = `
+        <div class="flex flex-col h-full">
+            <div class="flex-1 space-y-6 overflow-y-auto p-1">
+                <form id="form-edit-project-modal" class="space-y-6">
                     <div>
-                        <label for="projectTitleDetail" class="block text-sm font-medium text-zinc-300 mb-1">Nome do Projeto</label>
-                        <input type="text" id="projectTitleDetail" name="title" required value="${project.title}" class="w-full px-3 py-2 bg-zinc-700 border border-zinc-600 rounded-md">
+                        <label for="projectTitleModal" class="block text-sm font-medium text-zinc-300 mb-3 flex items-center gap-2">
+                            <i data-lucide="folder" class="w-4 h-4 text-blue-400"></i>
+                            Nome do Projeto
+                        </label>
+                        <input type="text" id="projectTitleModal" name="projectTitle" required 
+                                value="${project.title}"
+                                class="w-full px-4 py-3 bg-zinc-800 border border-zinc-600 rounded-xl text-white placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all">
                     </div>
+                    
                     <div>
-                        <label for="projectClientDetail" class="block text-sm font-medium text-zinc-300 mb-1">Cliente</label>
-                        <input type="text" id="projectClientDetail" name="client" required value="${project.client}" class="w-full px-3 py-2 bg-zinc-700 border border-zinc-600 rounded-md">
+                        <label for="projectClientModal" class="block text-sm font-medium text-zinc-300 mb-3 flex items-center gap-2">
+                            <i data-lucide="users" class="w-4 h-4 text-purple-400"></i>
+                            Cliente
+                        </label>
+                        <div class="relative">
+                            <i data-lucide="user" class="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-zinc-400"></i>
+                            <select id="projectClientModal" name="projectClientId" required 
+                                    class="w-full pl-10 pr-4 py-3 bg-zinc-800 border border-zinc-600 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all appearance-none">
+                                <option value="">Selecione um cliente</option>
+                                ${clientOptions}
+                            </select>
+                            <i data-lucide="chevron-down" class="w-4 h-4 absolute right-3 top-1/2 transform -translate-y-1/2 text-zinc-400 pointer-events-none"></i>
+                        </div>
                     </div>
+                    
                     <div>
-                        <label for="projectStatusDetail" class="block text-sm font-medium text-zinc-300 mb-1">Status</label>
-                        <select id="projectStatusDetail" name="status" required class="w-full px-3 py-2 bg-zinc-700 border border-zinc-600 rounded-md">
+                        <label for="projectStatusDetail" class="block text-sm font-medium text-zinc-300 mb-3 flex items-center gap-2">
+                            <i data-lucide="activity" class="w-4 h-4 text-cyan-400"></i>
+                            Status do Projeto
+                        </label>
+                        <select id="projectStatusDetail" name="status" required class="w-full px-4 py-3 bg-zinc-800 border border-zinc-600 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all appearance-none">
                             <option value="potential">Potencial</option>
                             <option value="active">Ativo</option>
                             <option value="approved">Aprovado</option>
                         </select>
                     </div>
-                    <div>
-                        <label for="projectDueDateDetail" class="block text-sm font-medium text-zinc-300 mb-1">Prazo</label>
-                        <input type="date" id="projectDueDateDetail" name="dueDate" value="${project.dueDate || ''}" class="w-full px-3 py-2 bg-zinc-700 border border-zinc-600 rounded-md text-zinc-300">
-                    </div>
 
-
-                    <div>
-                        <label class="block text-sm font-medium text-zinc-300 mb-1">Progresso</label>
-                        <div class="w-full bg-zinc-600 rounded-full h-4">
-                            <div class="bg-blue-500 h-4 rounded-full flex items-center justify-center text-xs font-bold text-white" style="width: ${progress}%">
-                                ${progress}%
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <div>
+                            <label for="projectDueDateModal" class="block text-sm font-medium text-zinc-300 mb-3 flex items-center gap-2">
+                                <i data-lucide="calendar" class="w-4 h-4 text-green-400"></i>
+                                Prazo de Entrega
+                            </label>
+                            <div class="relative">
+                                <i data-lucide="calendar" class="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-zinc-400"></i>
+                                <input type="date" id="projectDueDateModal" name="projectDueDate" 
+                                        value="${project.dueDate || ''}"
+                                        class="w-full pl-10 pr-4 py-3 bg-zinc-800 border border-zinc-600 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all">
                             </div>
                         </div>
-                        <p class="text-xs text-zinc-400 mt-1">${doneTasksCount} de ${totalTasks} tarefas concluídas.</p>
+                        
+                        <div>
+                            <label for="projectBudgetModal" class="block text-sm font-medium text-zinc-300 mb-3 flex items-center gap-2">
+                                <i data-lucide="dollar-sign" class="w-4 h-4 text-yellow-400"></i>
+                                Orçamento
+                            </label>
+                            <div class="relative">
+                                <span class="absolute left-3 top-1/2 transform -translate-y-1/2 text-zinc-400">R$</span>
+                                <input type="text" id="projectBudgetModal" name="projectBudget" 
+                                        value="${budgetValueForMask}"
+                                        class="w-full pl-10 pr-4 py-3 bg-zinc-800 border border-zinc-600 rounded-xl text-white placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                                        placeholder="0,00">
+                            </div>
+                        </div>
                     </div>
 
-                    <button type="submit" class="w-full py-2 px-4 bg-blue-500 hover:bg-blue-600 rounded-md font-semibold">Salvar Alterações</button>
+                    <div>
+                        <label class="block text-sm font-medium text-zinc-300 mb-3 flex items-center gap-2">
+                            <i data-lucide="tag" class="w-4 h-4 text-orange-400"></i>
+                            Categoria do Projeto
+                        </label>
+                        <div class="grid grid-cols-2 gap-3">
+                            <label class="flex-1">
+                                <input type="radio" name="projectCategory" value="website" class="hidden peer" ${project.category === 'website' ? 'checked' : ''}>
+                                <div class="w-full p-4 text-center bg-zinc-800 border border-zinc-600 rounded-xl cursor-pointer peer-checked:bg-blue-500/20 peer-checked:border-blue-500 peer-checked:text-blue-400 ...">
+                                    <div class="w-8 h-8 rounded-lg bg-blue-500/20 ... peer-checked:bg-blue-500"><i data-lucide="globe" class="w-4 h-4 text-blue-400 peer-checked:text-white"></i></div>
+                                    <span class="text-sm font-medium block">Website</span>
+                                </div>
+                            </label>
+                            <label class="flex-1">
+                                <input type="radio" name="projectCategory" value="branding" class="hidden peer" ${project.category === 'branding' ? 'checked' : ''}>
+                                <div class="w-full p-4 text-center bg-zinc-800 border border-zinc-600 rounded-xl cursor-pointer peer-checked:bg-purple-500/20 peer-checked:border-purple-500 peer-checked:text-purple-400 ...">
+                                    <div class="w-8 h-8 rounded-lg bg-purple-500/20 ... peer-checked:bg-purple-500"><i data-lucide="palette" class="w-4 h-4 text-purple-400 peer-checked:text-white"></i></div>
+                                    <span class="text-sm font-medium block">Branding</span>
+                                </div>
+                            </label>
+                            <label class="flex-1">
+                                <input type="radio" name="projectCategory" value="social" class="hidden peer" ${project.category === 'social' ? 'checked' : ''}>
+                                <div class="w-full p-4 text-center bg-zinc-800 border border-zinc-600 rounded-xl cursor-pointer peer-checked:bg-pink-500/20 peer-checked:border-pink-500 peer-checked:text-pink-400 ...">
+                                    <div class="w-8 h-8 rounded-lg bg-pink-500/20 ... peer-checked:bg-pink-500"><i data-lucide="share-2" class="w-4 h-4 text-pink-400 peer-checked:text-white"></i></div>
+                                    <span class="text-sm font-medium block">Social Media</span>
+                                </div>
+                            </label>
+                            <label class="flex-1">
+                                <input type="radio" name="projectCategory" value="other" class="hidden peer" ${project.category === 'other' ? 'checked' : ''}>
+                                <div class="w-full p-4 text-center bg-zinc-800 border border-zinc-600 rounded-xl cursor-pointer peer-checked:bg-gray-500/20 peer-checked:border-gray-500 peer-checked:text-gray-400 ...">
+                                    <div class="w-8 h-8 rounded-lg bg-gray-500/20 ... peer-checked:bg-gray-500"><i data-lucide="folder" class="w-4 h-4 text-gray-400 peer-checked:text-white"></i></div>
+                                    <span class="text-sm font-medium block">Outro</span>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label for="projectDescriptionModal" class="block text-sm font-medium text-zinc-300 mb-3 flex items-center gap-2">
+                            <i data-lucide="file-text" class="w-4 h-4 text-green-400"></i>
+                            Descrição
+                        </label>
+                        <textarea id="projectDescriptionModal" name="projectDescription" rows="3"
+                                class="w-full px-4 py-3 bg-zinc-800 border border-zinc-600 rounded-xl text-white ... resize-none"
+                                placeholder="Descreva brevemente o objetivo do projeto...">${project.description || ''}</textarea>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-zinc-300 mb-3 flex items-center gap-2">
+                            <i data-lucide="flag" class="w-4 h-4 text-red-400"></i>
+                            Prioridade
+                        </label>
+                        <div class="flex gap-3">
+                            <label class="flex-1">
+                                <input type="radio" name="projectPriority" value="low" class="hidden peer" ${project.priority === 'low' ? 'checked' : ''}>
+                                <div class="w-full p-3 text-center bg-zinc-800 border border-zinc-600 rounded-xl cursor-pointer peer-checked:bg-green-500/20 peer-checked:border-green-500 peer-checked:text-green-400 ...">
+                                    <span class="text-sm font-medium">Baixa</span>
+                                </div>
+                            </label>
+                            <label class="flex-1">
+                                <input type="radio" name="projectPriority" value="medium" class="hidden peer" ${project.priority === 'medium' ? 'checked' : ''}>
+                                <div class="w-full p-3 text-center bg-zinc-800 border border-zinc-600 rounded-xl cursor-pointer peer-checked:bg-yellow-500/20 peer-checked:border-yellow-500 peer-checked:text-yellow-400 ...">
+                                    <span class="text-sm font-medium">Média</span>
+                                </div>
+                            </label>
+                            <label class="flex-1">
+                                <input type="radio" name="projectPriority" value="high" class="hidden peer" ${project.priority === 'high' ? 'checked' : ''}>
+                                <div class="w-full p-3 text-center bg-zinc-800 border border-zinc-600 rounded-xl cursor-pointer peer-checked:bg-red-500/20 peer-checked:border-red-500 peer-checked:text-red-400 ...">
+                                    <span class="text-sm font-medium">Alta</span>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
                 </form>
-            `;
+            </div>
 
-            openSlideOver(detailsHtml, "Editar Projeto");
+            <div class="mt-auto pt-6 border-t border-zinc-700">
+                <div class="flex gap-3">
+                    <button type="button" id="btn-cancel-edit-project"
+                            class="flex-1 py-3 px-4 bg-zinc-700 hover:bg-zinc-600 rounded-xl font-semibold transition-colors duration-300 flex items-center justify-center gap-2">
+                        <i data-lucide="x" class="w-5 h-5"></i>
+                        Cancelar
+                    </button>
+                    <button type="submit" form="form-edit-project-modal"
+                            class="flex-1 py-3 px-4 bg-blue-500 hover:bg-blue-600 rounded-xl font-semibold text-white transition-all duration-300 flex items-center justify-center gap-2 group">
+                        <i data-lucide="check" class="w-5 h-5 group-hover:scale-110 transition-transform"></i>
+                        Salvar Alterações
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
 
-            document.getElementById('projectStatusDetail').value = project.status;
+    openSlideOver(detailsHtml, `Editando: ${project.title}`);
 
-            const panel = document.getElementById('slide-over-panel');
-            panel.querySelector('#form-save-project-details').addEventListener('submit', (e) => handleSaveProjectDetails(e, projectId));
-        }
-
-        async function handleSaveProjectDetails(e, projectId) {
-            e.preventDefault();
-            const form = e.target;
-            const newTitle = form.title.value;
-            const newClient = form.client.value;
-            const newStatus = form.status.value;
-            const newDueDate = form.dueDate.value;
-
-            try {
-                await updateDoc(getAgencyDoc(projectId), {
-                    title: newTitle,
-                    client: newClient,
-                    status: newStatus,
-                    dueDate: newDueDate || null
-
-                });
-                showModal("Sucesso", "Projeto atualizado.");
-                closeSlideOver();
-            } catch (error) {
-                console.error("Erro ao salvar detalhes do projeto:", error);
-                showModal("Erro", "Não foi possível salvar as alterações.");
+    // Pré-seleciona o status
+    document.getElementById('projectStatusDetail').value = project.status;
+    
+    // Inicializa a máscara de orçamento
+    const panel = document.getElementById('slide-over-panel');
+    const budgetInput = document.getElementById('projectBudgetModal');
+    let budgetMask;
+    
+    if (budgetInput && typeof IMask !== 'undefined') {
+        budgetMask = IMask(budgetInput, {
+            mask: 'R$ num',
+            blocks: {
+                num: {
+                    mask: Number,
+                    scale: 2,
+                    radix: ',',
+                    thousandsSeparator: '.',
+                    padFractionalZeros: true,
+                    normalizeZeros: true,
+                    min: 0
+                }
             }
-        }
+        });
+    }
+
+    // Adiciona listener de submit
+    panel.querySelector('#form-edit-project-modal').addEventListener('submit', (e) => handleSaveProjectDetails(e, projectId, budgetMask));
+    
+    // Adiciona listener ao botão "Cancelar"
+    panel.querySelector('#btn-cancel-edit-project').addEventListener('click', closeSlideOver);
+}
+
+async function handleSaveProjectDetails(e, projectId, budgetMask) {
+    e.preventDefault();
+    const form = e.target;
+    
+    // Pega o nome e ID do cliente
+    const clientSelect = form.projectClientId;
+    const newClientId = clientSelect.value;
+    const newClientName = clientSelect.options[clientSelect.selectedIndex].text;
+
+    // Pega o valor "limpo" do orçamento
+    let newBudgetValue = 0;
+    if (budgetMask && budgetMask.unmaskedValue) {
+        newBudgetValue = parseFloat(budgetMask.unmaskedValue) || 0;
+    }
+
+    const updateData = {
+        title: form.title.value,
+        clientId: newClientId,
+        clientName: newClientName,
+        status: form.status.value,
+        dueDate: form.dueDate.value || null,
+        budget: newBudgetValue,
+        category: form.projectCategory.value,
+        priority: form.projectPriority.value,
+        description: form.projectDescription.value || '',
+        updatedAt: serverTimestamp()
+    };
+
+    try {
+        await updateDoc(getAgencyDoc(projectId), updateData);
+        showModal("Sucesso", "Projeto atualizado.", "success");
+        closeSlideOver();
+    } catch (error) {
+        console.error("Erro ao salvar detalhes do projeto:", error);
+        showModal("Erro", "Não foi possível salvar as alterações.", "error");
+    }
+}
 
 
 
-        function showProjectDetailPage(projectId) {
-            currentProjectId = projectId;
-            const project = allProjects.find(p => p.id === projectId);
-            if (!project) {
-                showModal("Erro", "Projeto não encontrado.");
-                return;
-            }
+function showProjectDetailPage(projectId) {
+    currentProjectId = projectId;
+    const project = allProjects.find(p => p.id === projectId);
+    if (!project) {
+        showModal("Erro", "Projeto não encontrado.");
+        return;
+    }
 
-            document.getElementById('project-detail-title').textContent = project.title;
-            document.getElementById('project-detail-client').textContent = project.client;
+    // --- Preenche o Cabeçalho ---
+    document.getElementById('project-detail-title').textContent = project.title;
+    document.getElementById('project-detail-client').textContent = project.clientName || 'Cliente não definido';
 
-            showPage('project-detail');
-            loadProjectTasks(projectId);
-        }
+    // Badge de Status
+    const statusBadge = document.getElementById('project-detail-status-badge');
+    const statusLabels = { potential: 'Potencial', active: 'Ativo', approved: 'Aprovado' };
+    const statusIcons = { potential: 'alert-circle', active: 'clock', approved: 'check-circle' };
+    const statusColors = { potential: 'bg-yellow-500/20 text-yellow-400', active: 'bg-blue-500/20 text-blue-400', approved: 'bg-green-500/20 text-green-400' };
+    
+    const status = project.status || 'potential';
+    statusBadge.className = `inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm ${statusColors[status]}`;
+    statusBadge.innerHTML = `<i data-lucide="${statusIcons[status]}" class="w-3 h-3"></i><span>${statusLabels[status]}</span>`;
+
+    // --- Preenche a barra lateral "Informações" ---
+    
+    // 1. Prazo
+    document.getElementById('project-info-due-date').textContent = project.dueDate ? 
+        new Date(project.dueDate + 'T12:00:00').toLocaleDateString('pt-BR') : 'Sem prazo';
+    
+    // 2. Orçamento
+    const budgetEl = document.getElementById('project-info-budget');
+    if (project.budget && project.budget > 0) {
+        budgetEl.textContent = project.budget.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+        budgetEl.classList.add('text-green-400');
+        budgetEl.classList.remove('text-zinc-400');
+    } else {
+        budgetEl.textContent = "Não definido";
+        budgetEl.classList.remove('text-green-400');
+        budgetEl.classList.add('text-zinc-400');
+    }
+
+    // 3. Responsável (Placeholder)
+    document.getElementById('project-info-owner').textContent = "---"; 
+    document.getElementById('project-info-team-count').textContent = "0";
+    document.getElementById('project-info-team-list').innerHTML = `<p class="text-zinc-500 text-xs">Ainda não implementado.</p>`;
+
+    // --- Mostra a página e carrega as tarefas ---
+    showPage('project-detail');
+    loadProjectTasks(projectId);
+    
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+}
 
         function loadProjectTasks(projectId) {
-            if (unsubscribeProjectTasks[projectId]) unsubscribeProjectTasks[projectId]();
+    if (unsubscribeProjectTasks[projectId]) unsubscribeProjectTasks[projectId]();
 
-            const tasksQuery = query(getProjectTasksCollection(projectId), orderBy('createdAt', 'asc'));
-            unsubscribeProjectTasks[projectId] = onSnapshot(tasksQuery, (snapshot) => {
-                const projectTasks = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                allProjectTasks[projectId] = projectTasks;
-                renderProjectTaskKanban(projectTasks);
-                updateCalendar();
-                updatePomodoroTaskSelect();
-                renderAgencyTable(allProjects);
-            }, (error) => console.error(`Erro ao carregar tarefas do projeto ${projectId}:`, error));
-        }
+    const tasksQuery = query(getProjectTasksCollection(projectId), orderBy('createdAt', 'asc'));
+    unsubscribeProjectTasks[projectId] = onSnapshot(tasksQuery, (snapshot) => {
+        const projectTasks = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        allProjectTasks[projectId] = projectTasks;
+        
+        renderProjectTaskKanban(projectTasks); // Renderiza o Kanban
+        updateProjectMetrics(projectTasks); // 💡 RENDERIZA OS CARDS DE MÉTRICA
+        
+        // Atualiza outras partes da UI
+        updateCalendar();
+        updatePomodoroTaskSelect();
+        renderAgencyTable(allProjects); // Atualiza o progresso na tabela de projetos
+    }, (error) => console.error(`Erro ao carregar tarefas do projeto ${projectId}:`, error));
+}
+
+function updateProjectMetrics(tasks) {
+    const total = tasks.length;
+    const todo = tasks.filter(t => (t.status || 'todo') === 'todo').length;
+    const doing = tasks.filter(t => t.status === 'doing').length;
+    const done = tasks.filter(t => t.status === 'done').length;
+    
+    // Calcula o progresso (total pode ser 0)
+    const progress = (total > 0) ? Math.round((done / total) * 100) : 0;
+
+    // Atualiza os Cards de Métrica
+    document.getElementById('project-metric-total').textContent = total;
+    document.getElementById('project-metric-doing').textContent = doing;
+    document.getElementById('project-metric-done').textContent = done;
+    document.getElementById('project-metric-progress-text').textContent = `${progress}%`;
+    
+    // Atualiza a Barra de Progresso
+    const progressBar = document.getElementById('project-metric-progress-bar');
+    if (progressBar) {
+        progressBar.style.width = `${progress}%`;
+    }
+
+    // Atualiza os contadores do Kanban
+    document.getElementById('project-kanban-todo-count').textContent = todo;
+    document.getElementById('project-kanban-doing-count').textContent = doing;
+    document.getElementById('project-kanban-done-count').textContent = done;
+}
 
         function renderProjectTaskKanban(tasks) {
             const columns = {
@@ -2031,55 +3292,68 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
             });
         }
 
-        function createProjectTaskCard(task) {
-            const card = document.createElement('div');
-            card.dataset.id = task.id;
+function createProjectTaskCard(task) {
+    const template = document.getElementById('project-task-card-template');
+    if (!template) return document.createElement('div'); // Fallback
+    
+    const card = template.content.cloneNode(true).firstElementChild;
+    card.dataset.id = task.id; // Define o ID no elemento raiz do card
 
-            const statusColors = {
-                todo: 'border-l-4 border-blue-500',
-                doing: 'border-l-4 border-yellow-500',
-                done: 'border-l-4 border-green-500'
-            };
+    // Preenche os campos
+    card.querySelector('.task-title').textContent = task.title;
+    
+    const taskDesc = card.querySelector('.task-desc');
+    if (task.description) {
+        taskDesc.textContent = task.description;
+    } else {
+        taskDesc.remove(); // Remove o parágrafo de descrição se estiver vazio
+    }
 
-
-            card.className = `${COLORS.bgSecondary} p-4 rounded-lg shadow mb-3 cursor-move hover:bg-zinc-600 transition-colors ${statusColors[task.status] || ''} task-card`;
-
-            let recurrenceInfo = '';
-            if (task.recurrence && task.recurrence !== 'none') {
-                recurrenceInfo = `<i data-lucide="repeat" class="w-3 h-3 text-zinc-400" title="Tarefa Recorrente (${task.recurrence})"></i>`;
-            }
-
-            card.innerHTML = `
-                <div class="flex justify-between items-start">
-                    <span class="text-sm font-medium ${COLORS.textPrimary} pr-2">${task.title}</span>
-                    <div class="flex items-center gap-2">
-                        ${recurrenceInfo}
-                        <button data-delete-id="${task.id}" class="text-zinc-500 hover:text-red-500 flex-shrink-0">&times;</button>
-                    </div>
-                </div>
-                ${task.description ? `<p class="text-sm text-zinc-400 mt-1 truncate">${task.description}</p>` : ''}
-            `;
-
-            card.addEventListener('click', (e) => {
-                if (e.target.closest('[data-delete-id]')) return;
-                showProjectTaskDetails(task);
-            });
-
-            card.querySelector(`[data-delete-id="${task.id}"]`).addEventListener('click', async (e) => {
-                e.stopPropagation();
-                if (await showConfirmModal('Excluir Tarefa?', 'Tem certeza que deseja excluir esta tarefa do projeto?')) {
-                    try {
-                        await deleteDoc(getProjectTaskDoc(currentProjectId, task.id));
-                    } catch (error) {
-                        console.error("Erro ao deletar tarefa do projeto:", error);
-                        showModal("Erro", "Não foi possível excluir a tarefa.");
-                    }
-                }
-            });
-
-            if (typeof lucide !== 'undefined') lucide.createIcons();
-            return card;
+    // Data de Vencimento
+    const taskDueDate = card.querySelector('.task-due-date');
+    if (task.dueDate) {
+        const date = new Date(task.dueDate + 'T12:00:00');
+        const today = new Date();
+        today.setHours(0,0,0,0);
+        
+        taskDueDate.querySelector('span').textContent = date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+        
+        // Adiciona cor se estiver atrasado/hoje
+        if (date < today && task.status !== 'done') {
+            taskDueDate.classList.add('text-red-400', 'font-semibold');
+        } else if (date.getTime() === today.getTime() && task.status !== 'done') {
+            taskDueDate.classList.add('text-yellow-400', 'font-semibold');
         }
+    } else {
+        taskDueDate.remove(); // Remove o campo de data se estiver vazio
+    }
+
+    // (Placeholders para tags, equipe e prioridade, pois não temos esses dados)
+    card.querySelector('.task-tags').innerHTML = ''; // Limpa tags
+    card.querySelector('.task-team').innerHTML = `
+        <div class="w-6 h-6 rounded-full bg-zinc-500 flex items-center justify-center" title="Não atribuído">
+            <i data-lucide="user" class="w-3 h-3 text-white"></i>
+        </div>`;
+    card.querySelector('.task-priority').textContent = 'Média'; // Padrão
+
+    // Adiciona Listeners
+    card.querySelector('.btn-edit-task').addEventListener('click', (e) => {
+        e.stopPropagation(); // Impede o Sortable de pegar o clique
+        showProjectTaskDetails(task); // Reutiliza a função de detalhes
+    });
+
+    card.querySelector('.btn-delete-task').addEventListener('click', async (e) => {
+        e.stopPropagation();
+        if (await showConfirmModal('Excluir Tarefa?', 'Tem certeza que deseja excluir esta tarefa do projeto?')) {
+            try {
+                await deleteDoc(getProjectTaskDoc(currentProjectId, task.id));
+            } catch (error) { console.error("Erro ao deletar tarefa do projeto:", error); }
+        }
+    });
+
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+    return card;
+}
 
         async function updateProjectTaskStatus(taskId, newStatus) {
             if (!currentProjectId) return;
@@ -2093,137 +3367,382 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
             }
         }
 
-        function showAddProjectTaskForm() {
-            const formHtml = `
-                <form id="form-add-project-task-modal" class="space-y-4">
+function showAddProjectTaskForm() {
+    const formHtml = `
+        <div class="flex flex-col h-full">
+            <div class="flex-1 space-y-6 overflow-y-auto p-1">
+                <!-- Header -->
+                <div class="text-center mb-2">
+                    <h3 class="text-xl font-bold text-white">Nova Tarefa</h3>
+                    <p class="text-zinc-400 text-sm mt-1">Adicione uma nova tarefa ao projeto</p>
+                </div>
+
+                <form id="form-add-project-task-modal" class="space-y-6">
+                    <!-- Título da Tarefa -->
                     <div>
-                        <label class="block text-sm font-medium text-zinc-300 mb-1">Nova Tarefa</label>
-                        <input type="text" name="taskTitle" required class="w-full px-3 py-2 bg-zinc-700 border border-zinc-600 rounded-md" placeholder="O que precisa ser feito?">
+                        <label class="block text-sm font-medium text-zinc-300 mb-3 flex items-center gap-2">
+                            <i data-lucide="file-text" class="w-4 h-4 text-blue-400"></i>
+                            Título da Tarefa
+                        </label>
+                        <input type="text" name="taskTitle" required 
+                               class="w-full px-4 py-3 bg-zinc-800 border border-zinc-600 rounded-xl text-white placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                               placeholder="Ex: Criar layout da página inicial">
                     </div>
+                    
+                    <!-- Descrição -->
                     <div>
-                        <label class="block text-sm font-medium text-zinc-300 mb-1">Descrição</label>
-                        <textarea name="taskDescription" rows="4" class="w-full px-3 py-2 bg-zinc-700 border border-zinc-600 rounded-md" placeholder="Adicione mais detalhes..."></textarea>
+                        <label class="block text-sm font-medium text-zinc-300 mb-3 flex items-center gap-2">
+                            <i data-lucide="align-left" class="w-4 h-4 text-green-400"></i>
+                            Descrição
+                        </label>
+                        <textarea name="taskDescription" rows="4" 
+                                  class="w-full px-4 py-3 bg-zinc-800 border border-zinc-600 rounded-xl text-white placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all resize-none"
+                                  placeholder="Descreva os detalhes da tarefa, requisitos específicos, referências..."></textarea>
                     </div>
-                    <div>
-                        <label class="block text-sm font-medium text-zinc-300 mb-1">Data de Entrega</label>
-                        <input type="date" name="taskDueDate" class="w-full px-3 py-2 bg-zinc-700 border border-zinc-600 rounded-md text-zinc-300">
+
+                    <!-- Data e Prioridade -->
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <div>
+                            <label class="block text-sm font-medium text-zinc-300 mb-3 flex items-center gap-2">
+                                <i data-lucide="calendar" class="w-4 h-4 text-purple-400"></i>
+                                Data de Entrega
+                            </label>
+                            <div class="relative">
+                                <i data-lucide="calendar" class="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-zinc-400"></i>
+                                <input type="date" name="taskDueDate" 
+                                       class="w-full pl-10 pr-4 py-3 bg-zinc-800 border border-zinc-600 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all">
+                            </div>
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-zinc-300 mb-3 flex items-center gap-2">
+                                <i data-lucide="flag" class="w-4 h-4 text-red-400"></i>
+                                Prioridade
+                            </label>
+                            <select name="taskPriority" 
+                                    class="w-full px-4 py-3 bg-zinc-800 border border-zinc-600 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all appearance-none">
+                                <option value="medium">🟡 Média</option>
+                                <option value="high">🔴 Alta</option>
+                                <option value="low">🟢 Baixa</option>
+                            </select>
+                        </div>
                     </div>
+
+                    <!-- Recorrência e Categoria -->
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <div>
+                            <label class="block text-sm font-medium text-zinc-300 mb-3 flex items-center gap-2">
+                                <i data-lucide="repeat" class="w-4 h-4 text-orange-400"></i>
+                                Recorrência
+                            </label>
+                            <select name="taskRecurrence" 
+                                    class="w-full px-4 py-3 bg-zinc-800 border border-zinc-600 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all appearance-none">
+                                <option value="none">🔄 Nenhuma</option>
+                                <option value="daily">📅 Diária</option>
+                                <option value="weekly">🗓️ Semanal</option>
+                                <option value="monthly">📆 Mensal</option>
+                            </select>
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-zinc-300 mb-3 flex items-center gap-2">
+                                <i data-lucide="tag" class="w-4 h-4 text-blue-400"></i>
+                                Categoria
+                            </label>
+                            <select name="taskCategory" 
+                                    class="w-full px-4 py-3 bg-zinc-800 border border-zinc-600 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all appearance-none">
+                                <option value="design">🎨 Design</option>
+                                <option value="development">💻 Desenvolvimento</option>
+                                <option value="content">📝 Conteúdo</option>
+                                <option value="review">🔍 Revisão</option>
+                                <option value="meeting">🤝 Reunião</option>
+                                <option value="other">📦 Outro</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Responsável -->
                     <div>
-                        <label class="block text-sm font-medium text-zinc-300 mb-1">Recorrência</label>
-                        <select name="taskRecurrence" class="w-full px-3 py-2 bg-zinc-700 border border-zinc-600 rounded-md">
-                            <option value="none">Nenhuma</option>
-                            <option value="daily">Diária</option>
-                            <option value="weekly">Semanal</option>
+                        <label class="block text-sm font-medium text-zinc-300 mb-3 flex items-center gap-2">
+                            <i data-lucide="user" class="w-4 h-4 text-green-400"></i>
+                            Responsável
+                        </label>
+                        <select name="taskAssignee" 
+                                class="w-full px-4 py-3 bg-zinc-800 border border-zinc-600 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all appearance-none">
+                            <option value="">Selecione um responsável</option>
+                            <option value="user1">👤 João Silva (Designer)</option>
+                            <option value="user2">👤 Maria Santos (Dev)</option>
+                            <option value="user3">👤 Pedro Costa (PM)</option>
                         </select>
                     </div>
-                    <button type="submit" class="w-full py-2 px-4 bg-blue-500 hover:bg-blue-600 rounded-md font-semibold">Salvar Tarefa</button>
-                </form>
-            `;
-            openSlideOver(formHtml, "Adicionar Tarefa ao Projeto");
-            document.getElementById('form-add-project-task-modal').addEventListener('submit', handleAddProjectTask);
-        }
 
-        async function handleAddProjectTask(e) {
+                    <!-- Estimativa de Tempo -->
+                    <div>
+                        <label class="block text-sm font-medium text-zinc-300 mb-3 flex items-center gap-2">
+                            <i data-lucide="clock" class="w-4 h-4 text-yellow-400"></i>
+                            Estimativa de Tempo
+                        </label>
+                        <div class="grid grid-cols-3 gap-3">
+                            <label class="flex-1">
+                                <input type="radio" name="taskEstimate" value="1" class="hidden peer">
+                                <div class="w-full p-3 text-center bg-zinc-800 border border-zinc-600 rounded-xl cursor-pointer peer-checked:bg-blue-500/20 peer-checked:border-blue-500 peer-checked:text-blue-400 transition-all duration-300 hover:border-zinc-500">
+                                    <span class="text-sm font-medium">1h</span>
+                                </div>
+                            </label>
+                            <label class="flex-1">
+                                <input type="radio" name="taskEstimate" value="4" class="hidden peer" checked>
+                                <div class="w-full p-3 text-center bg-zinc-800 border border-zinc-600 rounded-xl cursor-pointer peer-checked:bg-blue-500/20 peer-checked:border-blue-500 peer-checked:text-blue-400 transition-all duration-300 hover:border-zinc-500">
+                                    <span class="text-sm font-medium">4h</span>
+                                </div>
+                            </label>
+                            <label class="flex-1">
+                                <input type="radio" name="taskEstimate" value="8" class="hidden peer">
+                                <div class="w-full p-3 text-center bg-zinc-800 border border-zinc-600 rounded-xl cursor-pointer peer-checked:bg-blue-500/20 peer-checked:border-blue-500 peer-checked:text-blue-400 transition-all duration-300 hover:border-zinc-500">
+                                    <span class="text-sm font-medium">8h</span>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Footer com Botões de Ação -->
+            <div class="mt-auto pt-6 border-t border-zinc-700">
+                <div class="flex gap-3">
+                    <button type="button" onclick="closeSlideOver()" 
+                            class="flex-1 py-3 px-4 bg-zinc-700 hover:bg-zinc-600 rounded-xl font-semibold transition-colors duration-300 flex items-center justify-center gap-2">
+                        <i data-lucide="x" class="w-5 h-5"></i>
+                        Cancelar
+                    </button>
+                    <button type="submit" form="form-add-project-task-modal"
+                            class="flex-1 py-3 px-4 bg-blue-500 hover:bg-blue-600 rounded-xl font-semibold text-white transition-all duration-300 flex items-center justify-center gap-2 group">
+                        <i data-lucide="plus" class="w-5 h-5 group-hover:scale-110 transition-transform"></i>
+                        Criar Tarefa
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    openSlideOver(formHtml, "Nova Tarefa");
+    
+    const form = document.getElementById('form-add-project-task-modal');
+    if (form) {
+        form.addEventListener('submit', handleAddProjectTask);
+    }
+}
+
+async function handleAddProjectTask(e) {
+    e.preventDefault();
+    if (!currentProjectId) return;
+
+    const form = e.target;
+    const formData = new FormData(form);
+    
+    const taskData = {
+        title: formData.get('taskTitle'),
+        description: formData.get('taskDescription') || "",
+        dueDate: formData.get('taskDueDate') || null,
+        recurrence: formData.get('taskRecurrence') || "none",
+        priority: formData.get('taskPriority') || "medium",
+        category: formData.get('taskCategory') || "other",
+        assignee: formData.get('taskAssignee') || null,
+        estimate: parseInt(formData.get('taskEstimate')) || 4,
+        status: 'todo',
+        notified: false,
+        createdAt: serverTimestamp()
+    };
+
+    try {
+        await addDoc(getProjectTasksCollection(currentProjectId), taskData);
+        form.reset();
+        closeSlideOver();
+        showModal("Sucesso", "Tarefa adicionada com sucesso!", "success");
+    } catch (error) {
+        console.error("Erro ao adicionar tarefa ao projeto:", error);
+        showModal("Erro", "Não foi possível adicionar a tarefa.", "error");
+    }
+}
+
+function showProjectTaskDetails(task) {
+    const detailsHtml = `
+        <div class="flex flex-col h-full">
+            <div class="flex-1 space-y-6 overflow-y-auto p-1">
+                <!-- Header -->
+                <div class="text-center mb-2">
+                    <h3 class="text-xl font-bold text-white">Editar Tarefa</h3>
+                    <p class="text-zinc-400 text-sm mt-1">Atualize os detalhes da tarefa</p>
+                </div>
+
+                <form id="form-save-project-task-details" class="space-y-6">
+                    <!-- Título -->
+                    <div>
+                        <label class="block text-sm font-medium text-zinc-300 mb-3 flex items-center gap-2">
+                            <i data-lucide="file-text" class="w-4 h-4 text-blue-400"></i>
+                            Título da Tarefa
+                        </label>
+                        <input type="text" name="title" required value="${task.title}" 
+                               class="w-full px-4 py-3 bg-zinc-800 border border-zinc-600 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all">
+                    </div>
+                    
+                    <!-- Descrição -->
+                    <div>
+                        <label class="block text-sm font-medium text-zinc-300 mb-3 flex items-center gap-2">
+                            <i data-lucide="align-left" class="w-4 h-4 text-green-400"></i>
+                            Descrição
+                        </label>
+                        <textarea name="description" rows="8" 
+                                  class="w-full px-4 py-3 bg-zinc-800 border border-zinc-600 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all resize-none font-mono text-sm leading-relaxed whitespace-pre-wrap"
+                                  placeholder="Descreva os detalhes da tarefa...">${task.description || ''}</textarea>
+                    </div>
+
+                    <!-- Informações da Tarefa -->
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <div>
+                            <label class="block text-sm font-medium text-zinc-300 mb-3 flex items-center gap-2">
+                                <i data-lucide="calendar" class="w-4 h-4 text-purple-400"></i>
+                                Data de Entrega
+                            </label>
+                            <div class="relative">
+                                <i data-lucide="calendar" class="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-zinc-400"></i>
+                                <input type="date" name="dueDate" value="${task.dueDate || ''}" 
+                                       class="w-full pl-10 pr-4 py-3 bg-zinc-800 border border-zinc-600 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all">
+                            </div>
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-zinc-300 mb-3 flex items-center gap-2">
+                                <i data-lucide="repeat" class="w-4 h-4 text-orange-400"></i>
+                                Recorrência
+                            </label>
+                            <select name="recurrence" 
+                                    class="w-full px-4 py-3 bg-zinc-800 border border-zinc-600 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all appearance-none">
+                                <option value="none">🔄 Nenhuma</option>
+                                <option value="daily">📅 Diária</option>
+                                <option value="weekly">🗓️ Semanal</option>
+                                <option value="monthly">📆 Mensal</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Status e Prioridade -->
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <div>
+                            <label class="block text-sm font-medium text-zinc-300 mb-3 flex items-center gap-2">
+                                <i data-lucide="circle" class="w-4 h-4 text-blue-400"></i>
+                                Status
+                            </label>
+                            <select name="status" 
+                                    class="w-full px-4 py-3 bg-zinc-800 border border-zinc-600 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all appearance-none">
+                                <option value="todo">⏳ A Fazer</option>
+                                <option value="doing">🔄 Em Progresso</option>
+                                <option value="done">✅ Concluído</option>
+                                <option value="blocked">🚫 Bloqueado</option>
+                            </select>
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-zinc-300 mb-3 flex items-center gap-2">
+                                <i data-lucide="flag" class="w-4 h-4 text-red-400"></i>
+                                Prioridade
+                            </label>
+                            <select name="priority" 
+                                    class="w-full px-4 py-3 bg-zinc-800 border border-zinc-600 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all appearance-none">
+                                <option value="low">🟢 Baixa</option>
+                                <option value="medium">🟡 Média</option>
+                                <option value="high">🔴 Alta</option>
+                                <option value="urgent">🚨 Urgente</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Progresso -->
+                    <div>
+                        <label class="block text-sm font-medium text-zinc-300 mb-3 flex items-center gap-2">
+                            <i data-lucide="trending-up" class="w-4 h-4 text-green-400"></i>
+                            Progresso
+                        </label>
+                        <div class="flex items-center gap-4">
+                            <div class="flex-1 bg-zinc-600 rounded-full h-3">
+                                <div class="bg-green-500 h-3 rounded-full" style="width: ${task.progress || 0}%"></div>
+                            </div>
+                            <span class="text-white text-sm font-medium w-12 text-right">${task.progress || 0}%</span>
+                        </div>
+                        <input type="range" name="progress" min="0" max="100" value="${task.progress || 0}" 
+                               class="w-full mt-2 accent-green-500">
+                    </div>
+                </form>
+            </div>
+
+            <!-- Footer com Botões de Ação -->
+            <div class="mt-auto pt-6 border-t border-zinc-700">
+                <div class="flex gap-3">
+                    <button type="button" onclick="closeSlideOver()" 
+                            class="flex-1 py-3 px-4 bg-zinc-700 hover:bg-zinc-600 rounded-xl font-semibold transition-colors duration-300 flex items-center justify-center gap-2">
+                        <i data-lucide="x" class="w-5 h-5"></i>
+                        Cancelar
+                    </button>
+                    <button type="submit" form="form-save-project-task-details"
+                            class="flex-1 py-3 px-4 bg-blue-500 hover:bg-blue-600 rounded-xl font-semibold text-white transition-all duration-300 flex items-center justify-center gap-2 group">
+                        <i data-lucide="save" class="w-5 h-5 group-hover:scale-110 transition-transform"></i>
+                        Salvar Alterações
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    openSlideOver(detailsHtml, "Editar Tarefa");
+
+    // Preenche os valores do formulário
+    const form = document.getElementById('form-save-project-task-details');
+    if (form) {
+        form.querySelector('[name="recurrence"]').value = task.recurrence || 'none';
+        form.querySelector('[name="status"]').value = task.status || 'todo';
+        form.querySelector('[name="priority"]').value = task.priority || 'medium';
+        form.querySelector('[name="progress"]').value = task.progress || 0;
+
+        form.addEventListener('submit', (e) => {
             e.preventDefault();
-            if (!currentProjectId) return;
+            handleSaveProjectTaskDetails(e, task.id);
+        });
+    }
+}
 
-            const form = e.target;
-            const title = form.taskTitle.value;
-            const description = form.taskDescription.value;
-            const dueDate = form.taskDueDate.value;
-            const recurrence = form.taskRecurrence.value;
+async function handleSaveProjectTaskDetails(e, taskId) {
+    if (!currentProjectId) return;
 
-            try {
-                await addDoc(getProjectTasksCollection(currentProjectId), {
-                    title,
-                    description: description || "",
-                    dueDate: dueDate || null,
-                    recurrence: recurrence || "none",
-                    status: 'todo',
-                    notified: false,
-                    createdAt: serverTimestamp()
-                });
-                form.reset();
-                closeSlideOver();
-            } catch (error) {
-                console.error("Erro ao adicionar tarefa ao projeto:", error);
-                showModal("Erro", "Não foi possível adicionar a tarefa.");
-            }
-        }
+    const form = e.target;
+    const formData = new FormData(form);
+    
+    const oldTask = allProjectTasks[currentProjectId]?.find(t => t.id === taskId);
 
-        function showProjectTaskDetails(task) {
-            const detailsHtml = `
-                <form id="form-save-project-task-details" class="space-y-4">
-                    <div>
-                        <label class="block text-sm font-medium text-zinc-300 mb-1">Tarefa</label>
-                        <input type="text" name="title" required value="${task.title}" class="w-full px-3 py-2 bg-zinc-700 border border-zinc-600 rounded-md">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-zinc-300 mb-1">Descrição</label>
-                        <textarea name="description" rows="10" 
-                        class="w-full px-4 py-3 bg-zinc-800 border border-zinc-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm whitespace-pre-wrap leading-relaxed" 
-                        placeholder="Use quebras de linha para listar informações (como no seu print).">${task.description || ''}</textarea>
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-zinc-300 mb-1">Data de Entrega</label>
-                        <input type="date" name="dueDate" value="${task.dueDate || ''}" class="w-full px-3 py-2 bg-zinc-700 border border-zinc-600 rounded-md text-zinc-300">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-zinc-300 mb-1">Recorrência</label>
-                        <select name="recurrence" class="w-full px-3 py-2 bg-zinc-700 border border-zinc-600 rounded-md">
-                            <option value="none">Nenhuma</option>
-                            <option value="daily">Diária</option>
-                            <option value="weekly">Semanal</option>
-                        </select>
-                    </div>
-                    <button type="submit" class="w-full py-2 px-4 bg-blue-500 hover:bg-blue-600 rounded-md font-semibold">Salvar Alterações</button>
-                </form>
-            `;
-            openSlideOver(detailsHtml, "Editar Tarefa do Projeto");
+    const updateData = {
+        title: formData.get('title'),
+        description: formData.get('description'),
+        dueDate: formData.get('dueDate') || null,
+        recurrence: formData.get('recurrence') || "none",
+        status: formData.get('status') || 'todo',
+        priority: formData.get('priority') || 'medium',
+        progress: parseInt(formData.get('progress')) || 0,
+        updatedAt: serverTimestamp()
+    };
 
-            document.querySelector('#form-save-project-task-details [name="recurrence"]').value = task.recurrence || 'none';
+    // Reset notificações se a data mudou
+    if (oldTask && oldTask.dueDate !== updateData.dueDate) {
+        updateData.notified = false;
+        updateData.overdueNotified = false;
+    }
 
-            document.getElementById('form-save-project-task-details').addEventListener('submit', (e) => {
-                e.preventDefault();
-                handleSaveProjectTaskDetails(e, task.id);
-            });
-        }
-
-        async function handleSaveProjectTaskDetails(e, taskId) {
-            if (!currentProjectId) return;
-
-            const form = e.target;
-            const newTitle = form.title.value;
-            const newDescription = form.description.value;
-            const newDueDate = form.dueDate.value;
-            const newRecurrence = form.recurrence.value;
-
-            const oldTask = allProjectTasks[currentProjectId]?.find(t => t.id === taskId);
-
-            const updateData = {
-                title: newTitle,
-                description: newDescription,
-                dueDate: newDueDate || null,
-                recurrence: newRecurrence || "none"
-            };
-
-            if (oldTask && oldTask.dueDate !== updateData.dueDate) {
-                updateData.notified = false;
-                updateData.overdueNotified = false;
-            }
-
-            try {
-                await updateDoc(getProjectTaskDoc(currentProjectId, taskId), updateData);
-                showModal("Sucesso", "Tarefa do projeto atualizada.");
-                closeSlideOver();
-            } catch (error) {
-                console.error("Erro ao salvar tarefa do projeto:", error);
-                showModal("Erro", "Não foi possível salvar as alterações.");
-            }
-        }
-
-
-
+    try {
+        await updateDoc(getProjectTaskDoc(currentProjectId, taskId), updateData);
+        showModal("Sucesso", "Tarefa atualizada com sucesso!", "success");
+        closeSlideOver();
+    } catch (error) {
+        console.error("Erro ao salvar tarefa do projeto:", error);
+        showModal("Erro", "Não foi possível salvar as alterações.", "error");
+    }
+}
 
 
         function updateCollegeStats(subjects, subjectTasks) {
@@ -2719,14 +4238,17 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
                 if (!col) return;
 
                 if (taskMap[statusKey].length === 0) {
+                    
+                    // 💡 HTML DE ESTADO VAZIO ATUALIZADO
                     let icon = 'plus-circle';
+                    let text = 'Nenhuma tarefa';
                     if (statusKey === 'doing') icon = 'play';
                     if (statusKey === 'done') icon = 'check';
 
                     col.innerHTML = `
                         <div class="text-center py-8 text-zinc-500">
-                            <i data-lucide="${icon}" class="w-6 h-6 mx-auto mb-2 opacity-50"></i>
-                            <p class="text-xs">Nenhuma tarefa</p>
+                            <i data-lucide="${icon}" class="w-8 h-8 mx-auto mb-2 opacity-50"></i>
+                            <p class="text-sm">${text}</p>
                         </div>`;
                 } else {
                     taskMap[statusKey].forEach(task => {
@@ -4390,3 +5912,1424 @@ function updateProgressBar() {
                 console.warn("Não foi possível tocar o som de alarme.", e);
             }
         }
+
+        function changeFinanceMonth(direction) {
+            if (currentFinanceFilter !== 'month') return; // Trava de segurança
+            
+            currentFinanceDate.setMonth(currentFinanceDate.getMonth() + direction);
+            renderFinancePage();
+        }
+/**
+ * Função principal para renderizar toda a página financeira.
+ */
+function renderFinancePage() {
+    if (!document.getElementById('page-agency-finance').classList.contains('hidden')) {
+        updateFinanceMonthDisplay(); // Ainda controla o display do mês
+        
+        // 1. CALCULAR O INTERVALO DE DATAS (startDate, endDate)
+        const now = new Date();
+        let startDate, endDate;
+        
+        // A base para o filtro 'month' é o 'currentFinanceDate' (para navegação)
+        // A base para os outros filtros é 'agora'
+        const baseDate = (currentFinanceFilter === 'month') ? currentFinanceDate : new Date();
+
+        switch (currentFinanceFilter) {
+            case '3-months':
+                // Começa no primeiro dia de 2 meses atrás
+                startDate = new Date(baseDate.getFullYear(), baseDate.getMonth() - 2, 1);
+                // Termina no último dia deste mês
+                endDate = new Date(baseDate.getFullYear(), baseDate.getMonth() + 1, 0);
+                break;
+            
+            case 'year':
+                // 1º de Janeiro deste ano
+                startDate = new Date(baseDate.getFullYear(), 0, 1);
+                // 31 de Dezembro deste ano
+                endDate = new Date(baseDate.getFullYear(), 11, 31);
+                break;
+                
+            case 'month':
+            default:
+                // 1º dia do mês selecionado
+                startDate = new Date(baseDate.getFullYear(), baseDate.getMonth(), 1);
+                // Último dia do mês selecionado
+                endDate = new Date(baseDate.getFullYear(), baseDate.getMonth() + 1, 0);
+        }
+
+        // 2. FILTRAR TRANSAÇÕES pelo intervalo
+        const filteredTransactions = allAgencyTransactions.filter(tx => {
+            if (!tx.date) return false;
+            // Adiciona T12:00:00 para evitar problemas de fuso horário
+            const txDate = new Date(tx.date + 'T12:00:00'); 
+            return txDate >= startDate && txDate <= endDate;
+        });
+
+        // 3. Obter dados do "Mês Anterior" (APENAS se o filtro for 'month')
+        let prevMonthTransactions = [];
+        if (currentFinanceFilter === 'month') {
+            const prevMonthDate = new Date(currentFinanceDate.getTime());
+            prevMonthDate.setMonth(prevMonthDate.getMonth() - 1);
+            const prevMonthYear = prevMonthDate.getFullYear();
+            const prevMonth = prevMonthDate.getMonth();
+            
+            prevMonthTransactions = allAgencyTransactions.filter(tx => {
+                const txDate = tx.date ? new Date(tx.date + 'T12:00:00') : null;
+                if (!txDate) return false;
+                return txDate.getFullYear() === prevMonthYear && txDate.getMonth() === prevMonth;
+            });
+        }
+
+        // 4. Obter "A Receber" (sempre global, independente do filtro de data)
+        const pendingReceivables = allAgencyTransactions.filter(tx =>
+            tx.type === 'income' &&
+            tx.paymentStatus !== 'paid_100'
+        ).sort((a, b) => new Date(a.date) - new Date(b.date));
+        
+        // 5. RENDERIZAR COMPONENTES
+        
+        // Os cards agora mostram o total do período filtrado
+        updateFinanceDashboardCards(filteredTransactions, prevMonthTransactions, pendingReceivables);
+        
+        // As tabelas de Receitas/Despesas agora mostram o período todo
+        const incomeTxs = filteredTransactions.filter(tx => tx.type === 'income');
+        const expenseTxs = filteredTransactions.filter(tx => tx.type === 'expense');
+        
+        renderAccountsReceivableTable(pendingReceivables); // Esta não muda
+        renderFinanceIncomeTable(incomeTxs); // Agora mostra o período filtrado
+        renderFinanceExpensesTable(expenseTxs); // Agora mostra o período filtrado
+        
+        // O gráfico AINDA mostra o ano inteiro (baseado no currentFinanceDate ou 'now')
+        renderFinanceCharts(allAgencyTransactions);
+    }
+}
+
+/**
+ * Atualiza o texto do seletor de mês/ano.
+ */
+function updateFinanceMonthDisplay() {
+    const display = document.getElementById('finance-month-year-display');
+    if (display) {
+        display.textContent = currentFinanceDate.toLocaleDateString('pt-BR', {
+            month: 'long',
+            year: 'numeric'
+        });
+    }
+}
+
+/**
+ * Atualiza os 4 cards de resumo.
+ */
+function updateFinanceDashboardCards(periodTransactions, prevMonthTransactions, pendingReceivables) {
+    let totalReceitas = 0;
+    let totalDespesas = 0;
+    let totalAReceber = 0;
+
+    // 1. Calcula totais do PERÍODO SELECIONADO
+    periodTransactions.forEach(tx => {
+        if (tx.type === 'income') totalReceitas += parseFloat(tx.value) || 0;
+        else if (tx.type === 'expense') totalDespesas += parseFloat(tx.value) || 0;
+    });
+
+    // 2. Calcula total A RECEBER
+    pendingReceivables.forEach(tx => {
+        const value = parseFloat(tx.value) || 0;
+        if (tx.paymentStatus === 'pending_100') totalAReceber += value;
+        else if (tx.paymentStatus === 'pending_50' || tx.paymentStatus === 'paid_50') totalAReceber += (value / 2);
+    });
+
+    const balanco = totalReceitas - totalDespesas;
+    const formatBRL = (value) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+    // 3. Calcula Porcentagens (APENAS se o filtro for 'month')
+    let receitasPctText = 'Total no período'; // Texto padrão
+    let despesasPctText = 'Total no período'; // Texto padrão
+
+    if (currentFinanceFilter === 'month') {
+        let prevTotalReceitas = 0;
+        let prevTotalDespesas = 0;
+        prevMonthTransactions.forEach(tx => {
+            if (tx.type === 'income') prevTotalReceitas += parseFloat(tx.value) || 0;
+            else if (tx.type === 'expense') prevTotalDespesas += parseFloat(tx.value) || 0;
+        });
+        
+        const formatPct = (val, type) => {
+            if (!isFinite(val) || isNaN(val)) return '...';
+            const isGood = type === 'receita' ? val >= 0 : val <= 0;
+            const colorClass = isGood ? 'text-green-500' : 'text-red-500';
+            const prefix = val >= 0 ? '+' : '';
+            return `<span class="${colorClass}">${prefix}${val.toFixed(0)}% vs mês anterior</span>`;
+        };
+
+        let receitasPct = (prevTotalReceitas === 0) ? (totalReceitas > 0 ? 100 : 0) : ((totalReceitas - prevTotalReceitas) / prevTotalReceitas) * 100;
+        let despesasPct = (prevTotalDespesas === 0) ? (totalDespesas > 0 ? 100 : 0) : ((totalDespesas - prevTotalDespesas) / prevTotalDespesas) * 100;
+        if (prevTotalReceitas === 0 && totalReceitas === 0) receitasPct = 0;
+        if (prevTotalDespesas === 0 && totalDespesas === 0) despesasPct = 0;
+        
+        receitasPctText = formatPct(receitasPct, 'receita');
+        despesasPctText = formatPct(despesasPct, 'despesa');
+    }
+
+    // 4. Atualiza o HTML
+    
+    // Card Receitas
+    document.getElementById('finance-card-receitas').textContent = formatBRL(totalReceitas);
+    document.getElementById('finance-card-receitas').closest('.bg-gradient-to-br').querySelector('.border-t p').innerHTML = receitasPctText;
+    
+    // Card Despesas
+    document.getElementById('finance-card-despesas').textContent = formatBRL(totalDespesas);
+    document.getElementById('finance-card-despesas').closest('.bg-gradient-to-br').querySelector('.border-t p').innerHTML = despesasPctText;
+
+    // Card Balanço
+    const balancoEl = document.getElementById('finance-card-balanco');
+    balancoEl.textContent = formatBRL(balanco);
+    balancoEl.classList.toggle('text-green-400', balanco > 0);
+    balancoEl.classList.toggle('text-red-400', balanco < 0);
+    balancoEl.classList.toggle('text-white', balanco === 0);
+    // 💡 Texto do balanço muda com o filtro
+    const balancoSubtext = (currentFinanceFilter === 'month') ? "Balanço mensal" : "Balanço no período";
+    balancoEl.closest('.bg-gradient-to-br').querySelector('.border-t p').textContent = balancoSubtext;
+    
+    // Card A Receber (não muda)
+    document.getElementById('finance-card-areceber').textContent = formatBRL(totalAReceber);
+    const pendenciasCount = pendingReceivables.length;
+    document.getElementById('finance-card-areceber').closest('.bg-gradient-to-br').querySelector('.border-t p').textContent = `${pendenciasCount} ${pendenciasCount === 1 ? 'pendência' : 'pendências'} em aberto`;
+}
+/**
+ * Renderiza a tabela de transações do mês.
+ */
+function renderFinanceIncomeTable(incomeTransactions) {
+    const tableBody = document.getElementById('finance-income-body');
+    if (!tableBody) return;
+
+    // Pega o container da tabela para achar o header e footer
+    const tableContainer = tableBody.closest('.bg-zinc-700\\/30');
+    let totalIncome = 0;
+
+    tableBody.innerHTML = ''; // Limpa a tabela
+
+    if (incomeTransactions.length === 0) {
+        tableBody.innerHTML = `<tr><td colspan="5" class="p-6 text-center text-zinc-500 text-sm">Nenhuma receita este mês.</td></tr>`;
+    } else {
+        const paymentStatusLabels = { 'pending_100': 'Pendente (100%)', 'pending_50': 'Pendente (50%)', 'paid_50': 'Pago (50%)', 'paid_100': 'Pago (100%)' };
+        const statusColors = { 'pending_100': 'text-red-400', 'pending_50': 'text-red-400', 'paid_50': 'text-yellow-400', 'paid_100': 'text-green-400' };
+
+        incomeTransactions.forEach(tx => {
+            totalIncome += parseFloat(tx.value) || 0; // Calcula total
+
+            const tr = document.createElement('tr');
+            tr.className = 'hover:bg-zinc-600';
+            const client = tx.clientId ? allAgencyClients.find(c => c.id === tx.clientId) : null;
+            const txDate = new Date(tx.date + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+            const paymentStatus = tx.paymentStatus || 'pending_100';
+
+            tr.innerHTML = `
+                <td class="p-3">
+                    <p class="font-medium text-white">${tx.title}</p>
+                    <p class="text-xs text-zinc-400">${client ? client.name : 'Cliente Avulso'}</p>
+                </td>
+                <td class="p-3 text-zinc-400">${txDate}</td>
+                <td class="p-3 font-medium text-green-400">R$ ${parseFloat(tx.value).toFixed(2)}</td>
+                <td class="p-3 text-xs font-medium ${statusColors[paymentStatus] || 'text-zinc-400'}">
+                    ${paymentStatusLabels[paymentStatus]}
+                    ${tx.invoiceIssued ? '<span class="block text-blue-400 mt-1">(NFe Emitida)</span>' : ''}
+                </td>
+                <td class="p-3 text-right whitespace-nowrap">
+                    <button data-edit-tx-id="${tx.id}" class="text-zinc-400 hover:text-blue-500 p-1"><i data-lucide="pencil" class="w-4 h-4 pointer-events-none"></i></button>
+                    <button data-delete-tx-id="${tx.id}" class="text-zinc-400 hover:text-red-500 p-1"><i data-lucide="trash-2" class="w-4 h-4 pointer-events-none"></i></button>
+                </td>
+            `;
+            tr.querySelector(`[data-edit-tx-id="${tx.id}"]`).addEventListener('click', () => showAddTransactionForm(tx.id));
+            tr.querySelector(`[data-delete-tx-id="${tx.id}"]`).addEventListener('click', () => handleDeleteTransaction(tx.id, null, tx.title, tx.date));
+            tableBody.appendChild(tr);
+        });
+        if (typeof lucide !== 'undefined') lucide.createIcons();
+    }
+
+    // 💡 ATUALIZA HEADER E FOOTER
+    const formatBRL = (val) => val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+    // Atualiza o contador no header
+    tableContainer.querySelector('.bg-gradient-to-r span[class*="bg-green-500/20"]').textContent = incomeTransactions.length;
+    // Atualiza o total no footer
+    tableContainer.querySelector('.bg-zinc-700\\/50 span[class*="text-green-400"]').textContent = formatBRL(totalIncome);
+}
+
+/**
+ * 💡 NOVA FUNÇÃO (Substitui parte da antiga renderFinanceTransactionsTable)
+ * Renderiza a tabela de Despesas do Mês.
+ */
+function renderFinanceExpensesTable(expenseTransactions) {
+    const tableBody = document.getElementById('finance-expenses-body');
+    if (!tableBody) return;
+
+    // Pega o container da tabela para achar o header e footer
+    const tableContainer = tableBody.closest('.bg-zinc-700\\/30');
+    let totalExpense = 0;
+
+    tableBody.innerHTML = ''; // Limpa a tabela
+
+    if (expenseTransactions.length === 0) {
+        tableBody.innerHTML = `<tr><td colspan="5" class="p-6 text-center text-zinc-500 text-sm">Nenhuma despesa este mês.</td></tr>`;
+    } else {
+        const expenseTypeLabels = { 'fixed': 'Fixa', 'variable': 'Variável' };
+        const typeColors = { 'fixed': 'text-purple-400', 'variable': 'text-zinc-400' };
+
+        expenseTransactions.forEach(tx => {
+            totalExpense += parseFloat(tx.value) || 0; // Calcula total
+
+            const tr = document.createElement('tr');
+            tr.className = 'hover:bg-zinc-600';
+            const txDate = new Date(tx.date + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+            const recurrenceId = tx.recurrenceId || null;
+
+            tr.innerHTML = `
+                <td class="p-3">
+                    <p class="font-medium text-white">${tx.title}</p>
+                    <p class="text-xs text-zinc-400 capitalize">${tx.category || 'Sem categoria'}</p>
+                </td>
+                <td class="p-3 text-zinc-400">${txDate}</td>
+                <td class="p-3 font-medium text-red-400">R$ ${parseFloat(tx.value).toFixed(2)}</td>
+                <td class="p-3 text-xs font-medium ${typeColors[tx.expenseType] || 'text-zinc-400'}">
+                    ${expenseTypeLabels[tx.expenseType] || 'N/A'}
+                </td>
+                <td class="p-3 text-right whitespace-nowrap">
+                    <button data-edit-tx-id="${tx.id}" class="text-zinc-400 hover:text-blue-500 p-1"><i data-lucide="pencil" class="w-4 h-4 pointer-events-none"></i></button>
+                    <button data-delete-tx-id="${tx.id}" class="text-zinc-400 hover:text-red-500 p-1"><i data-lucide="trash-2" class="w-4 h-4 pointer-events-none"></i></button>
+                </td>
+            `;
+            tr.querySelector(`[data-edit-tx-id="${tx.id}"]`).addEventListener('click', () => showAddTransactionForm(tx.id));
+            tr.querySelector(`[data-delete-tx-id="${tx.id}"]`).addEventListener('click', () => handleDeleteTransaction(tx.id, recurrenceId, tx.title, tx.date));
+            tableBody.appendChild(tr);
+        });
+        if (typeof lucide !== 'undefined') lucide.createIcons();
+    }
+
+    // 💡 ATUALIZA HEADER E FOOTER
+    const formatBRL = (val) => val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+    // Atualiza o contador no header
+    tableContainer.querySelector('.bg-gradient-to-r span[class*="bg-red-500/20"]').textContent = expenseTransactions.length;
+    // Atualiza o total no footer
+    tableContainer.querySelector('.bg-zinc-700\\/50 span[class*="text-red-400"]').textContent = formatBRL(totalExpense);
+}
+
+function showManageClientsForm() {
+    const formHtml = `
+        <div class="flex flex-col h-full">
+            <div class="flex-1 space-y-6 overflow-y-auto p-1">
+                <div class="bg-zinc-800 rounded-2xl p-6 border border-zinc-700">
+                    <div class="flex items-center gap-3 mb-4">
+                        <div class="w-8 h-8 rounded-lg bg-blue-500/20 flex items-center justify-center">
+                            <i data-lucide="user-plus" class="w-4 h-4 text-blue-400"></i>
+                        </div>
+                        <h4 class="text-lg font-semibold text-white">Adicionar Novo Cliente</h4>
+                    </div>
+                    
+                    <form id="form-add-client-modal" class="space-y-5">
+                        <div>
+                            <label class="block text-sm font-medium text-zinc-300 mb-3 flex items-center gap-2">
+                                <i data-lucide="building" class="w-4 h-4 text-purple-400"></i>
+                                Nome/Razão Social
+                            </label>
+                            <input type="text" name="clientName" required 
+                                    class="w-full px-4 py-3 bg-zinc-700 border border-zinc-600 rounded-xl text-white placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                                    placeholder="Ex: Empresa X Design Ltda">
+                        </div>
+                        
+                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                            <div>
+                                <label class="block text-sm font-medium text-zinc-300 mb-3 flex items-center gap-2">
+                                    <i data-lucide="credit-card" class="w-4 h-4 text-green-400"></i>
+                                    CNPJ (para NFe)
+                                </label>
+                                <input type="text" name="clientCnpj" 
+                                        class="w-full px-4 py-3 bg-zinc-700 border border-zinc-600 rounded-xl text-white placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                                        placeholder="00.000.000/0001-00">
+                            </div>
+                            
+                            <div>
+                                <label class="block text-sm font-medium text-zinc-300 mb-3 flex items-center gap-2">
+                                    <i data-lucide="mail" class="w-4 h-4 text-yellow-400"></i>
+                                    Email do Contato
+                                </label>
+                                <input type="email" name="clientEmail" 
+                                        class="w-full px-4 py-3 bg-zinc-700 border border-zinc-600 rounded-xl text-white placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                                        placeholder="contato@empresa.com">
+                            </div>
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-zinc-300 mb-3 flex items-center gap-2">
+                                <i data-lucide="phone" class="w-4 h-4 text-blue-400"></i>
+                                Telefone
+                            </label>
+                            <input type="tel" name="clientPhone" 
+                                    class="w-full px-4 py-3 bg-zinc-700 border border-zinc-600 rounded-xl text-white placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                                    placeholder="(11) 99999-9999">
+                        </div>
+                        
+                        <button type="submit" 
+                                class="w-full py-3 px-4 bg-blue-500 hover:bg-blue-600 rounded-xl font-semibold text-white transition-all duration-300 flex items-center justify-center gap-2 group">
+                            <i data-lucide="user-plus" class="w-5 h-5 group-hover:scale-110 transition-transform"></i>
+                            Cadastrar Cliente
+                        </button>
+                    </form>
+                </div>
+
+                <div class="relative my-2">
+                    <div class="absolute inset-0 flex items-center">
+                        <div class="w-full border-t border-zinc-700"></div>
+                    </div>
+                    <div class="relative flex justify-center">
+                        <span class="bg-zinc-800 px-3 text-sm text-zinc-400 flex items-center gap-2">
+                            <i data-lucide="users" class="w-4 h-4"></i>
+                            Clientes Cadastrados
+                        </span>
+                    </div>
+                </div>
+
+                <div class="bg-zinc-800 rounded-2xl border border-zinc-700 overflow-hidden">
+                    <div class="bg-gradient-to-r from-zinc-700 to-zinc-800 p-4 border-b border-zinc-600">
+                        <div class="flex items-center justify-between">
+                            <h4 class="text-lg font-semibold text-white flex items-center gap-2">
+                                <i data-lucide="users" class="w-5 h-5 text-purple-400"></i>
+                                Todos os Clientes
+                            </h4>
+                            <span class="bg-zinc-700 text-zinc-300 text-xs font-medium px-2 py-1 rounded-full" id="clients-count">0</span>
+                        </div>
+                    </div>
+                    
+                    <div id="client-list-in-modal" class="max-h-80 overflow-auto">
+                        </div>
+                    
+                    <div class="bg-zinc-700/30 p-4 border-t border-zinc-600">
+                        <div class="flex justify-between items-center text-sm">
+                            <span class="text-zinc-400">Total de clientes cadastrados</span>
+                            <button class="text-blue-400 hover:text-blue-300 transition-colors flex items-center gap-1 text-xs">
+                                <i data-lucide="download" class="w-3 h-3"></i>
+                                Exportar Lista
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    openSlideOver(formHtml, "Gerenciar Clientes");
+    
+    // 💡 INICIALIZA AS MÁSCARAS
+    const panel = document.getElementById('slide-over-panel');
+    const cnpjMaskEl = panel.querySelector('input[name="clientCnpj"]');
+    const phoneMaskEl = panel.querySelector('input[name="clientPhone"]');
+
+    if (cnpjMaskEl) {
+        IMask(cnpjMaskEl, { mask: '00.000.000/0001-00' });
+    }
+    if (phoneMaskEl) {
+        IMask(phoneMaskEl, {
+            mask: [
+                { mask: '(00) 0000-0000' },
+                { mask: '(00) 00000-0000' }
+            ]
+        });
+    }
+    
+    const form = document.getElementById('form-add-client-modal');
+    if (form) {
+        form.addEventListener('submit', handleAddClient);
+    }
+    
+    renderClientListInModal();
+}
+
+/**
+ * 💡 FUNÇÃO ATUALIZADA (com correção de ícone)
+ * Renderiza a lista de clientes dentro do modal.
+ */
+function renderClientListInModal() {
+    const listEl = document.getElementById('client-list-in-modal');
+    const countEl = document.getElementById('clients-count');
+    
+    if (!listEl) return;
+    
+    if (countEl) {
+        countEl.textContent = allAgencyClients.length;
+    }
+    
+    listEl.innerHTML = '';
+    
+    if (allAgencyClients.length === 0) {
+        listEl.innerHTML = `
+            <div class="text-center py-12">
+                <div class="flex flex-col items-center justify-center gap-4 text-zinc-500">
+                    <i data-lucide="users" class="w-16 h-16 opacity-50"></i>
+                    <p>Nenhum cliente cadastrado</p>
+                    <p class="text-sm">Adicione seu primeiro cliente para começar</p>
+                </div>
+            </div>
+        `;
+        if (typeof lucide !== 'undefined') lucide.createIcons();
+        return;
+    }
+
+    allAgencyClients.forEach((client, index) => {
+        const itemEl = document.createElement('div');
+        itemEl.className = `p-4 border-b border-zinc-700/50 hover:bg-zinc-700/30 transition-colors duration-200 ${index === allAgencyClients.length - 1 ? 'border-b-0' : ''}`;
+        
+        itemEl.innerHTML = `
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-4 flex-1 min-w-0">
+                    <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center flex-shrink-0">
+                        <i data-lucide="building" class="w-6 h-6 text-white"></i>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center gap-2 mb-1">
+                            <p class="font-semibold text-white truncate">${client.name}</p>
+                            ${client.cnpj ? `
+                                <span class="bg-green-500/20 text-green-400 text-xs px-2 py-1 rounded-full flex items-center gap-1">
+                                    <i data-lucide="credit-card" class="w-3 h-3"></i>
+                                    CNPJ
+                                </span>
+                            ` : ''}
+                        </div>
+                        <div class="flex flex-wrap gap-4 text-xs text-zinc-400">
+                            ${client.cnpj ? `
+                                <span class="flex items-center gap-1">
+                                    <i data-lucide="hash" class="w-3 h-3"></i>
+                                    ${client.cnpj}
+                                </span>
+                            ` : ''}
+                            ${client.email ? `
+                                <span class="flex items-center gap-1 truncate">
+                                    <i data-lucide="mail" class="w-3 h-3"></i>
+                                    ${client.email}
+                                </span>
+                            ` : ''}
+                            ${client.phone ? `
+                                <span class="flex items-center gap-1">
+                                    <i data-lucide="phone" class="w-3 h-3"></i>
+                                    ${client.phone}
+                                </span>
+                            ` : ''}
+                        </div>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2 ml-4">
+                    <button data-edit-client-id="${client.id}" 
+                            class="p-2 rounded-lg bg-zinc-700 hover:bg-zinc-600 transition-colors group"
+                            title="Editar Cliente">
+                        <i data-lucide="edit-2" class="w-4 h-4 text-zinc-400 group-hover:text-blue-400 transition-colors"></i>
+                    </button>
+                    <button data-delete-client-id="${client.id}" 
+                            class="p-2 rounded-lg bg-zinc-700 hover:bg-zinc-600 transition-colors group"
+                            title="Excluir Cliente">
+                        <i data-lucide="trash-2" class="w-4 h-4 text-zinc-400 group-hover:text-red-400 transition-colors"></i>
+                    </button>
+                </div>
+            </div>
+        `;
+        
+        itemEl.querySelector(`[data-delete-client-id="${client.id}"]`).addEventListener('click', async () => {
+            if (await showConfirmModal(
+                'Excluir Cliente?', 
+                `Tem certeza que deseja excluir "${client.name}"? Esta ação não pode ser desfeita.`,
+                'Excluir',
+                'Cancelar',
+                'error'
+            )) {
+                try {
+                    await deleteDoc(getAgencyClientDoc(client.id));
+                    showModal("Sucesso", `Cliente "${client.name}" excluído com sucesso.`, "success");
+                } catch (error) {
+                    console.error("Erro ao deletar cliente:", error);
+                    showModal("Erro", "Não foi possível excluir o cliente.", "error");
+                }
+            }
+        });
+        
+        // Event Listener para Editar (agora funcional)
+        itemEl.querySelector(`[data-edit-client-id="${client.id}"]`).addEventListener('click', () => {
+            showEditClientForm(client.id);
+        });
+        
+        listEl.appendChild(itemEl);
+    });
+
+    if (typeof lucide !== 'undefined') {
+        lucide.createIcons();
+    }
+}
+
+/**
+ * 💡 FUNÇÃO ATUALIZADA (para ler valores com máscara)
+ * Handler para adicionar novo cliente.
+ */
+async function handleAddClient(e) {
+    e.preventDefault();
+    const form = e.target;
+    
+    // Pega os valores diretos dos inputs (incluindo as máscaras)
+    const clientData = {
+        name: form.clientName.value,
+        cnpj: form.clientCnpj.value || null,
+        email: form.clientEmail.value || null,
+        phone: form.clientPhone.value || null,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+    };
+    
+    try {
+        await addDoc(getAgencyClientsCollection(), clientData);
+        form.reset();
+        showModal("Sucesso", `Cliente "${clientData.name}" cadastrado com sucesso!`, "success");
+    } catch (error) {
+        console.error("Erro ao cadastrar cliente:", error);
+        showModal("Erro", "Não foi possível cadastrar o cliente.", "error");
+    }
+}
+
+/**
+ * 💡 NOVA FUNÇÃO (Para implementar o botão "Editar")
+ * Abre um formulário para editar um cliente existente.
+ */
+function showEditClientForm(clientId) {
+    const client = allAgencyClients.find(c => c.id === clientId);
+    if (!client) {
+        showModal("Erro", "Cliente não encontrado.", "error");
+        return;
+    }
+
+    const formHtml = `
+        <div class="flex flex-col h-full">
+            <div class="flex-1 space-y-6 overflow-y-auto p-1">
+                <form id="form-edit-client-modal" class="space-y-5 bg-zinc-800 rounded-2xl p-6 border border-zinc-700">
+                    <div>
+                        <label class="block text-sm font-medium text-zinc-300 mb-3 flex items-center gap-2">
+                            <i data-lucide="building" class="w-4 h-4 text-purple-400"></i>
+                            Nome/Razão Social
+                        </label>
+                        <input type="text" name="clientName" required 
+                                class="w-full px-4 py-3 bg-zinc-700 border border-zinc-600 rounded-xl text-white"
+                                value="${client.name}">
+                    </div>
+                    
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                        <div>
+                            <label class="block text-sm font-medium text-zinc-300 mb-3 flex items-center gap-2">
+                                <i data-lucide="credit-card" class="w-4 h-4 text-green-400"></i>
+                                CNPJ
+                            </label>
+                            <input type="text" name="clientCnpj" 
+                                    class="w-full px-4 py-3 bg-zinc-700 border border-zinc-600 rounded-xl text-white"
+                                    placeholder="00.000.000/0001-00" value="${client.cnpj || ''}">
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-zinc-300 mb-3 flex items-center gap-2">
+                                <i data-lucide="mail" class="w-4 h-4 text-yellow-400"></i>
+                                Email do Contato
+                            </label>
+                            <input type="email" name="clientEmail" 
+                                    class="w-full px-4 py-3 bg-zinc-700 border border-zinc-600 rounded-xl text-white"
+                                    placeholder="contato@empresa.com" value="${client.email || ''}">
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-zinc-300 mb-3 flex items-center gap-2">
+                            <i data-lucide="phone" class="w-4 h-4 text-blue-400"></i>
+                            Telefone
+                        </label>
+                        <input type="tel" name="clientPhone" 
+                                class="w-full px-4 py-3 bg-zinc-700 border border-zinc-600 rounded-xl text-white"
+                                placeholder="(11) 99999-9999" value="${client.phone || ''}">
+                    </div>
+                </form>
+            </div>
+            
+            <div class="mt-auto pt-6 border-t border-zinc-700">
+                <div class="flex gap-3">
+                    <button type="button" id="btn-back-to-client-list" 
+                            class="flex-1 py-3 px-4 bg-zinc-700 hover:bg-zinc-600 rounded-xl font-semibold transition-colors">
+                        Voltar
+                    </button>
+                    <button type="submit" form="form-edit-client-modal" 
+                            class="flex-1 py-3 px-4 bg-blue-500 hover:bg-blue-600 rounded-xl font-semibold text-white">
+                        Salvar Alterações
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    openSlideOver(formHtml, `Editando: ${client.name}`);
+    
+    // Inicializa as máscaras para os campos de edição
+    const panel = document.getElementById('slide-over-panel');
+    const cnpjMask = panel.querySelector('input[name="clientCnpj"]');
+    if (cnpjMask) {
+        IMask(cnpjMask, { mask: '00.000.000/0001-00' });
+    }
+    
+    const phoneMask = panel.querySelector('input[name="clientPhone"]');
+    if (phoneMask) {
+        IMask(phoneMask, {
+            mask: [
+                { mask: '(00) 0000-0000' },
+                { mask: '(00) 00000-0000' }
+            ]
+        });
+    }
+
+    // 💡 CORREÇÃO DO ONCLICK: Adiciona listener de evento
+    const form = document.getElementById('form-edit-client-modal');
+    if (form) {
+        form.addEventListener('submit', (e) => handleEditClient(e, clientId));
+    }
+    const backBtn = document.getElementById('btn-back-to-client-list');
+    if (backBtn) {
+        backBtn.addEventListener('click', showManageClientsForm); // Chama a função com segurança
+    }
+}
+
+/**
+ * 💡 NOVA FUNÇÃO (Para implementar o botão "Editar")
+ * Handler para salvar as alterações de um cliente.
+ */
+async function handleEditClient(e, clientId) {
+    e.preventDefault();
+    const form = e.target;
+    
+    const clientData = {
+        name: form.clientName.value,
+        cnpj: form.clientCnpj.value || null,
+        email: form.clientEmail.value || null,
+        phone: form.clientPhone.value || null,
+        updatedAt: serverTimestamp() // Atualiza o timestamp
+    };
+
+    try {
+        await updateDoc(getAgencyClientDoc(clientId), clientData);
+        showModal("Sucesso", `Cliente "${clientData.name}" atualizado!`, "success");
+        showManageClientsForm(); // Volta para a lista de clientes
+    } catch (error) {
+        console.error("Erro ao atualizar cliente:", error);
+        showModal("Erro", "Não foi possível atualizar o cliente.", "error");
+    }
+}
+/**
+ * Abre o slide-over para Adicionar/Editar Transação.
+ */
+function showAddTransactionForm(txId = null) {
+    const transaction = txId ? allAgencyTransactions.find(t => t.id === txId) : null;
+    const isEditing = !!transaction;
+
+    // 1. SEU NOVO HTML (com uma pequena limpeza no título)
+    // Eu removi o <h3> do topo, pois a função openSlideOver já define o título.
+    const formHtml = `
+        <form id="form-add-transaction" class="flex flex-col h-full">
+            <div class="flex-1 space-y-6 overflow-y-auto p-1">
+                
+                <div class="bg-zinc-800 rounded-2xl p-1 border border-zinc-700">
+                    <div class="grid grid-cols-2 gap-2">
+                        <button type="button" id="btn-tx-type-income" data-type="income" 
+                            class="btn-tx-type flex items-center justify-center gap-2 py-4 px-4 rounded-xl font-semibold transition-all duration-300 group">
+                            <div class="w-8 h-8 rounded-lg bg-green-500/20 flex items-center justify-center group-[.active]:bg-green-500 transition-colors">
+                                <i data-lucide="trending-up" class="w-4 h-4 text-green-400 group-[.active]:text-white transition-colors"></i>
+                            </div>
+                            <span class="text-sm">Receita</span>
+                        </button>
+                        <button type="button" id="btn-tx-type-expense" data-type="expense" 
+                            class="btn-tx-type flex items-center justify-center gap-2 py-4 px-4 rounded-xl font-semibold transition-all duration-300 group">
+                            <div class="w-8 h-8 rounded-lg bg-red-500/20 flex items-center justify-center group-[.active]:bg-red-500 transition-colors">
+                                <i data-lucide="trending-down" class="w-4 h-4 text-red-400 group-[.active]:text-white transition-colors"></i>
+                            </div>
+                            <span class="text-sm">Despesa</span>
+                        </button>
+                    </div>
+                </div>
+                
+                <input type="hidden" id="txType" name="txType" value="${isEditing ? transaction.type : 'income'}">
+                <input type="hidden" name="txId" value="${txId || ''}">
+
+                <div class="space-y-4">
+                    <div>
+                        <label for="txTitle" class="block text-sm font-medium text-zinc-300 mb-3 flex items-center gap-2">
+                            <i data-lucide="file-text" class="w-4 h-4 text-blue-400"></i>
+                            Título da Transação
+                        </label>
+                        <input type="text" id="txTitle" name="txTitle" required 
+                                class="w-full px-4 py-3 bg-zinc-800 border border-zinc-600 rounded-xl text-white placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                                placeholder="Ex: Website Corporativo - Cliente X" 
+                                value="${isEditing ? transaction.title : ''}">
+                    </div>
+                    
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label for="txValueMasked" class="block text-sm font-medium text-zinc-300 mb-3 flex items-center gap-2">
+                                <i data-lucide="dollar-sign" class="w-4 h-4 text-green-400"></i>
+                                Valor
+                            </label>
+                            <div class="relative">
+                                <input type="text" id="txValueMasked" name="txValueMasked" required 
+                                        class="w-full pl-10 pr-4 py-3 bg-zinc-800 border border-zinc-600 rounded-xl text-white placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                                        placeholder="0,00" 
+                                        value="${isEditing ? (transaction.value * 100) : ''}">
+                            </div>
+                        </div>
+                        <div>
+                            <label for="txDate" class="block text-sm font-medium text-zinc-300 mb-3 flex items-center gap-2">
+                                <i data-lucide="calendar" class="w-4 h-4 text-purple-400"></i>
+                                Data
+                            </label>
+                            <div class="relative">
+                                <i data-lucide="calendar" class="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-zinc-400"></i>
+                                <input type="date" id="txDate" name="txDate" required 
+                                        class="w-full pl-10 pr-4 py-3 bg-zinc-800 border border-zinc-600 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                                        value="${isEditing ? transaction.date : new Date().toISOString().split('T')[0]}">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="tx-income-fields" class="space-y-4 border-t border-zinc-700 pt-4">
+                    <div class="flex items-center gap-2 mb-2">
+                        <div class="w-6 h-6 rounded-lg bg-green-500/20 flex items-center justify-center">
+                            <i data-lucide="users" class="w-3 h-3 text-green-400"></i>
+                        </div>
+                        <h4 class="text-md font-semibold text-green-400">Detalhes da Receita</h4>
+                    </div>
+                    
+                    <div>
+                        <label for="client-search-input" class="block text-sm font-medium text-zinc-300 mb-3 flex items-center gap-2">
+                            <i data-lucide="search" class="w-4 h-4 text-blue-400"></i>
+                            Cliente
+                        </label>
+                        <div class="relative">
+                            <input type="text" id="client-search-input" 
+                                    class="w-full px-4 py-3 bg-zinc-800 border border-zinc-600 rounded-xl text-white placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                                    placeholder="Digite para buscar um cliente...">
+                            <input type="hidden" id="txClientId" name="txClientId" value="${isEditing ? (transaction.clientId || '') : ''}">
+                            <div id="client-search-dropdown" class="hidden absolute z-10 w-full bg-zinc-700 border border-zinc-600 rounded-xl mt-2 max-h-48 overflow-y-auto shadow-2xl">
+                                </div>
+                        </div>
+                    </div>
+                    
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label for="txPaymentStatus" class="block text-sm font-medium text-zinc-300 mb-3 flex items-center gap-2">
+                                <i data-lucide="credit-card" class="w-4 h-4 text-yellow-400"></i>
+                                Status do Pagamento
+                            </label>
+                            <select id="txPaymentStatus" name="txPaymentStatus" 
+                                    class="w-full px-4 py-3 bg-zinc-800 border border-zinc-600 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all appearance-none">
+                                <option value="pending_100">🟡 Pendente (100%)</option>
+                                <option value="pending_50">🟠 Pendente (50%)</option>
+                                <option value="paid_50">🔵 Pago (50%)</option>
+                                <option value="paid_100">🟢 Pago (100%)</option>
+                            </select>
+                        </div>
+                        
+                        <div class="flex items-end">
+                            <label for="txInvoiceIssued" class="flex items-center justify-between w-full p-4 bg-zinc-800 rounded-xl border border-zinc-600 cursor-pointer hover:border-zinc-500 transition-colors">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-8 h-8 rounded-lg bg-blue-500/20 flex items-center justify-center">
+                                        <i data-lucide="file-text" class="w-4 h-4 text-blue-400"></i>
+                                    </div>
+                                    <div>
+                                        <span class="text-white text-sm font-medium block">Nota Fiscal</span>
+                                        <span class="text-zinc-400 text-xs">Emitida?</span>
+                                    </div>
+                                </div>
+                                <div class="relative">
+                                    <input type="checkbox" id="txInvoiceIssued" name="txInvoiceIssued" class="sr-only peer">
+                                    <div class="w-12 h-6 bg-zinc-600 rounded-full peer peer-checked:bg-blue-500 transition-colors duration-300"></div>
+                                    <div class="absolute left-1 top-1 w-4 h-4 bg-white rounded-full peer-checked:translate-x-6 transition-transform duration-300 shadow-lg"></div>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                
+                <div id="tx-expense-fields" class="hidden space-y-4 border-t border-zinc-700 pt-4">
+                    <div class="flex items-center gap-2 mb-2">
+                        <div class="w-6 h-6 rounded-lg bg-red-500/20 flex items-center justify-center">
+                            <i data-lucide="shopping-cart" class="w-3 h-3 text-red-400"></i>
+                        </div>
+                        <h4 class="text-md font-semibold text-red-400">Detalhes da Despesa</h4>
+                    </div>
+                    
+                    <div>
+                        <label for="txCategory" class="block text-sm font-medium text-zinc-300 mb-3 flex items-center gap-2">
+                            <i data-lucide="tag" class="w-4 h-4 text-purple-400"></i>
+                            Categoria
+                        </label>
+                        <select id="txCategory" name="txCategory" 
+                                class="w-full px-4 py-3 bg-zinc-800 border border-zinc-600 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all appearance-none">
+                            <option value="">Selecione uma categoria</option>
+                            <option value="software">💻 Software & Ferramentas</option>
+                            <option value="marketing">📢 Marketing & Publicidade</option>
+                            <option value="hosting">🌐 Hospedagem & Domínio</option>
+                            <option value="office">🏢 Escritório & Infraestrutura</option>
+                            <option value="services">🔧 Serviços Profissionais</option>
+                            <option value="taxes">🏛️ Impostos & Tributos</option>
+                            <option value="other">📦 Outros</option>
+                        </select>
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-zinc-300 mb-3 flex items-center gap-2">
+                            <i data-lucide="repeat" class="w-4 h-4 text-orange-400"></i>
+                            Tipo de Despesa
+                        </label>
+                        <div class="grid grid-cols-2 gap-3">
+                            <label class="flex-1">
+                                <input type="radio" name="txExpenseType" value="variable" class="hidden peer" checked>
+                                <div class="w-full p-4 text-center bg-zinc-800 border border-zinc-600 rounded-xl cursor-pointer peer-checked:bg-orange-500/20 peer-checked:border-orange-500 peer-checked:text-orange-400 transition-all duration-300 hover:border-zinc-500">
+                                    <div class="w-8 h-8 rounded-lg bg-orange-500/20 flex items-center justify-center mx-auto mb-2 peer-checked:bg-orange-500">
+                                        <i data-lucide="activity" class="w-4 h-4 text-orange-400 peer-checked:text-white"></i>
+                                    </div>
+                                    <span class="text-sm font-medium block">Variável</span>
+                                    <span class="text-xs text-zinc-400 peer-checked:text-orange-300">Ocorrência única</span>
+                                </div>
+                            </label>
+                            <label class="flex-1">
+                                <input type="radio" name="txExpenseType" value="fixed" class="hidden peer">
+                                <div class="w-full p-4 text-center bg-zinc-800 border border-zinc-600 rounded-xl cursor-pointer peer-checked:bg-blue-500/20 peer-checked:border-blue-500 peer-checked:text-blue-400 transition-all duration-300 hover:border-zinc-500">
+                                    <div class="w-8 h-8 rounded-lg bg-blue-500/20 flex items-center justify-center mx-auto mb-2 peer-checked:bg-blue-500">
+                                        <i data-lucide="calendar" class="w-4 h-4 text-blue-400 peer-checked:text-white"></i>
+                                    </div>
+                                    <span class="text-sm font-medium block">Fixa</span>
+                                    <span class="text-xs text-zinc-400 peer-checked:text-blue-300">Recorrente mensal</span>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+            <div class="mt-auto pt-6 border-t border-zinc-700">
+                <div class="flex gap-3">
+                    <button type="button" onclick="closeSlideOver()" 
+                            class="flex-1 py-3 px-4 bg-zinc-700 hover:bg-zinc-600 rounded-xl font-semibold transition-colors duration-300 flex items-center justify-center gap-2">
+                        <i data-lucide="x" class="w-5 h-5"></i>
+                        Cancelar
+                    </button>
+                    <button type="submit" 
+                            class="flex-1 py-3 px-4 bg-blue-500 hover:bg-blue-600 rounded-xl font-semibold text-white transition-all duration-300 flex items-center justify-center gap-2 group">
+                        <i data-lucide="check" class="w-5 h-5 group-hover:scale-110 transition-transform"></i>
+                        ${isEditing ? 'Salvar' : 'Criar'}
+                    </button>
+                </div>
+            </div>
+        </form>
+    `;
+    
+    // Abre o Slide-Over
+    // 💡 MELHORIA: Título removido do HTML e passado para a função
+    openSlideOver(formHtml, isEditing ? "Editar Transação" : "Nova Transação");
+
+    // Inicializa os componentes
+    const panel = document.getElementById('slide-over-panel');
+    const form = panel.querySelector('#form-add-transaction');
+    const incomeFields = panel.querySelector('#tx-income-fields');
+    const expenseFields = panel.querySelector('#tx-expense-fields');
+    const txTypeInput = panel.querySelector('#txType');
+    
+    // Máscara de Valor (Seu código está perfeito)
+    const valueMask = IMask(panel.querySelector('#txValueMasked'), {
+        mask: 'R$ num',
+        blocks: {
+            num: {
+                mask: Number,
+                scale: 2,
+                radix: ',',
+                thousandsSeparator: '.',
+                padFractionalZeros: true,
+                normalizeZeros: true,
+                min: 0
+            }
+        }
+    });
+
+    // 💡 MELHORIA: Controle de Tipo de Transação mais limpo
+const setTxType = (type) => {
+        txTypeInput.value = type;
+        const isIncome = type === 'income';
+        
+        // Atualiza botões
+        panel.querySelector('#btn-tx-type-income').classList.toggle('active', isIncome);
+        panel.querySelector('#btn-tx-type-income').classList.toggle('bg-green-500/10', isIncome); // <-- Problema
+        panel.querySelector('#btn-tx-type-income').classList.toggle('border-green-500', isIncome); // <-- Problema
+        panel.querySelector('#btn-tx-type-income').classList.toggle('text-green-400', isIncome); // <-- Problema
+        
+        panel.querySelector('#btn-tx-type-expense').classList.toggle('active', !isIncome);
+        panel.querySelector('#btn-tx-type-expense').classList.toggle('bg-red-500/10', !isIncome); // <-- Problema
+        panel.querySelector('#btn-tx-type-expense').classList.toggle('border-red-500', !isIncome); // <-- Problema
+        panel.querySelector('#btn-tx-type-expense').classList.toggle('text-red-400', !isIncome); // <-- Problema
+        
+        // Mostra/oculta seções
+        incomeFields.classList.toggle('hidden', !isIncome);
+        expenseFields.classList.toggle('hidden', isIncome);
+    };
+    
+    panel.querySelectorAll('.btn-tx-type').forEach(btn => {
+        btn.addEventListener('click', () => setTxType(btn.dataset.type));
+    });
+
+    // Combobox de Clientes (Seu código está perfeito, apenas adicionei os ícones no dropdown)
+    const clientInput = panel.querySelector('#client-search-input');
+    const clientDropdown = panel.querySelector('#client-search-dropdown');
+    const clientIdInput = panel.querySelector('#txClientId');
+    
+    clientInput.addEventListener('keyup', () => {
+        const searchTerm = clientInput.value.toLowerCase();
+        clientDropdown.innerHTML = '';
+        
+        const filteredClients = allAgencyClients.filter(c => c.name.toLowerCase().includes(searchTerm));
+        
+        if (filteredClients.length > 0) {
+            filteredClients.forEach(client => {
+                clientDropdown.innerHTML += 
+                    `<div class="p-3 hover:bg-zinc-600 cursor-pointer transition-colors flex items-center gap-3" data-id="${client.id}" data-name="${client.name}">
+                        <div class="w-8 h-8 rounded-lg bg-blue-500/20 flex items-center justify-center">
+                            <i data-lucide="user" class="w-4 h-4 text-blue-400"></i>
+                        </div>
+                        <span class="text-white">${client.name}</span>
+                    </div>`;
+            });
+            clientDropdown.classList.remove('hidden');
+        } else {
+            clientDropdown.innerHTML = '<div class="p-3 text-zinc-400 text-center">Nenhum cliente encontrado</div>';
+            clientDropdown.classList.remove('hidden');
+        }
+        lucide.createIcons(); // Renderiza o ícone do usuário no dropdown
+    });
+    
+    clientDropdown.addEventListener('click', (e) => {
+        const item = e.target.closest('[data-id]');
+        if (item) {
+            clientIdInput.value = item.dataset.id;
+            clientInput.value = item.dataset.name;
+            clientDropdown.classList.add('hidden');
+        }
+    });
+    
+    // (O listener de 'click' para fechar o dropdown está ótimo)
+    document.addEventListener('click', (e) => {
+        if (!clientInput.contains(e.target) && !clientDropdown.contains(e.target)) {
+            clientDropdown.classList.add('hidden');
+        }
+    }, { once: true });
+
+    // Preenche o formulário se for edição (Seu código está perfeito)
+    if (isEditing) {
+        setTxType(transaction.type);
+        
+        if (transaction.clientId) {
+            const client = allAgencyClients.find(c => c.id === transaction.clientId);
+            if (client) {
+                clientInput.value = client.name;
+                clientIdInput.value = client.id;
+            }
+        }
+        
+        panel.querySelector('#txPaymentStatus').value = transaction.paymentStatus || 'pending_100';
+        panel.querySelector('#txInvoiceIssued').checked = transaction.invoiceIssued || false;
+        // txExpenseType é tratado pelo radio
+        panel.querySelector('#txCategory').value = transaction.category || '';
+        
+        if (transaction.type === 'expense') {
+            const expenseTypeRadio = panel.querySelector(`input[name="txExpenseType"][value="${transaction.expenseType || 'variable'}"]`);
+            if (expenseTypeRadio) expenseTypeRadio.checked = true;
+        }
+    } else {
+        setTxType('income');
+    }
+
+    // Adiciona o listener de submit
+    form.addEventListener('submit', (e) => handleSaveTransaction(e, valueMask));
+}
+
+/**
+ * 💡 NOVA FUNÇÃO ÚNICA (Substitui handleAddTransaction e handleEditTransaction)
+ * Salva a transação lendo os dados dos novos componentes.
+ */
+async function handleSaveTransaction(e, valueMask) {
+    e.preventDefault();
+    const form = e.target;
+    
+    // 1. Pega os dados dos campos
+    const txId = form.txId.value;
+    const isEditing = !!txId;
+    const type = form.txType.value;
+
+    const unmaskedValue = valueMask.unmaskedValue;
+    const value = parseFloat(unmaskedValue) || 0;
+
+    // 3. Monta o objeto de dados
+    const data = {
+        title: form.txTitle.value,
+        value: value,
+        date: form.txDate.value,
+        type: type,
+        updatedAt: serverTimestamp()
+    };
+    
+    let recurrenceMonths = 1;
+
+    if (type === 'income') {
+        data.clientId = form.txClientId.value || null;
+        data.paymentStatus = form.txPaymentStatus.value;
+        data.invoiceIssued = form.txInvoiceIssued.checked;
+        data.category = "Serviço Prestado";
+    } else {
+        // 💡 CORREÇÃO: Lê o valor do radio button selecionado
+        data.expenseType = form.txExpenseType.value; 
+        data.category = form.txCategory.value || "Despesa";
+        
+        if (data.expenseType === 'fixed') {
+            recurrenceMonths = 60; // 5 anos
+        }
+    }
+
+    // 4. Lógica de Salvar (Idêntica à anterior)
+    try {
+        if (isEditing) {
+            // Lógica de EDIÇÃO
+            const docRef = getAgencyTransactionDoc(txId);
+            await updateDoc(docRef, data);
+        } 
+        else if (type === 'expense' && data.expenseType === 'fixed' && recurrenceMonths > 1) {
+            // Lógica de ADIÇÃO (Recorrente)
+            const recurrenceId = `recur_${Date.now()}`;
+            const batch = writeBatch(db);
+            const baseDate = new Date(data.date + 'T12:00:00');
+            data.createdAt = serverTimestamp();
+
+            for (let i = 0; i < recurrenceMonths; i++) {
+                const newDate = new Date(baseDate.getTime());
+                newDate.setMonth(baseDate.getMonth() + i);
+                const dateString = newDate.toISOString().split('T')[0];
+                const docRef = doc(collection(db, `${getBasePath()}/agencyTransactions`));
+                
+                batch.set(docRef, { ...data, date: dateString, recurrenceId: recurrenceId });
+            }
+            await batch.commit();
+            showModal("Sucesso", `Despesa fixa "${data.title}" foi criada para os próximos 5 anos.`);
+        } 
+        else {
+            // Lógica de ADIÇÃO (Única)
+            data.createdAt = serverTimestamp();
+            await addDoc(getAgencyTransactionsCollection(), data);
+        }
+        
+        form.reset();
+        closeSlideOver();
+    } catch (error) {
+        console.error("Erro ao salvar transação:", error);
+        showModal("Erro", "Não foi possível salvar a transação.");
+    }
+}
+
+/**
+ * Salva (Adiciona ou Edita) uma transação no Firebase.
+ */
+async function handleAddTransaction(e) {
+    e.preventDefault();
+    const form = e.target;
+    const txId = form.txId.value;
+    const isEditing = !!txId;
+    
+    // Se for edição, chama a função de editar e termina
+    if (isEditing) {
+        return handleEditTransaction(txId, form);
+    }
+    
+    // Lógica de ADIÇÃO
+    const type = form.txType.value;
+    const data = {
+        title: form.txTitle.value,
+        value: parseFloat(form.txValue.value) || 0,
+        date: form.txDate.value,
+        type: type,
+        updatedAt: serverTimestamp(),
+        createdAt: serverTimestamp()
+    };
+
+    // 💡 LÓGICA DE RECORRÊNCIA AUTOMÁTICA
+    let recurrenceMonths = 1; // Padrão é 1 (variável)
+    
+    if (type === 'income') {
+        data.clientId = form.txClientId.value || null;
+        data.paymentStatus = form.txPaymentStatus.value;
+        data.invoiceIssued = form.txInvoiceIssued.checked;
+        data.category = "Serviço Prestado";
+    } else {
+        data.category = form.txCategory.value || "Despesa";
+        data.expenseType = form.txExpenseType.value;
+        
+        // 💡 AQUI ESTÁ A MÁGICA
+        if (data.expenseType === 'fixed') {
+            recurrenceMonths = 60; // "Infinito" = 60 meses (5 anos)
+        }
+    }
+
+    // Se for despesa fixa E o usuário pediu para repetir > 1 mês
+    if (type === 'expense' && data.expenseType === 'fixed' && recurrenceMonths > 1) {
+        
+        const recurrenceId = `recur_${Date.now()}`;
+        const batch = writeBatch(db);
+        const baseDate = new Date(data.date + 'T12:00:00');
+
+        for (let i = 0; i < recurrenceMonths; i++) {
+            const newDate = new Date(baseDate.getTime());
+            newDate.setMonth(baseDate.getMonth() + i);
+            const dateString = newDate.toISOString().split('T')[0];
+            
+            const docRef = doc(collection(db, `${getBasePath()}/agencyTransactions`));
+            
+            batch.set(docRef, {
+                ...data,
+                date: dateString,
+                recurrenceId: recurrenceId, // ID que liga todas
+                recurrenceMonths: recurrenceMonths
+            });
+        }
+        
+        try {
+            await batch.commit();
+            form.reset();
+            closeSlideOver();
+            showModal("Sucesso", `Despesa fixa "${data.title}" foi criada para os próximos 5 anos.`);
+        } catch (error) {
+            console.error("Erro ao salvar transações recorrentes:", error);
+            showModal("Erro", "Não foi possível salvar as transações recorrentes.");
+        }
+
+    } else {
+        // Lançamento normal (Receita ou Despesa Variável)
+        try {
+            await addDoc(getAgencyTransactionsCollection(), data);
+            form.reset();
+            closeSlideOver();
+        } catch (error) {
+            console.error("Erro ao salvar transação:", error);
+            showModal("Erro", "Não foi possível salvar a transação.");
+        }
+    }
+}
+
+/**
+ * 💡 FUNÇÃO DE EDIÇÃO ATUALIZADA (mais simples)
+ * Lida apenas com a EDIÇÃO de uma transação.
+ */
+async function handleEditTransaction(txId, form) {
+    const type = form.txType.value;
+    
+    const data = {
+        title: form.txTitle.value,
+        value: parseFloat(form.txValue.value) || 0,
+        date: form.txDate.value,
+        type: type,
+        updatedAt: serverTimestamp()
+    };
+    
+    if (type === 'income') {
+        data.clientId = form.txClientId.value || null;
+        data.paymentStatus = form.txPaymentStatus.value;
+        data.invoiceIssued = form.txInvoiceIssued.checked;
+        data.category = "Serviço Prestado";
+    } else {
+        data.category = form.txCategory.value || "Despesa";
+        data.expenseType = form.txExpenseType.value;
+    }
+    
+    try {
+        const docRef = getAgencyTransactionDoc(txId);
+        await updateDoc(docRef, data);
+        form.reset();
+        closeSlideOver();
+    } catch (error) {
+        console.error("Erro ao salvar transação:", error);
+        showModal("Erro", "Não foi possível salvar as alterações.");
+    }
+}
+
+async function handleDeleteTransaction(txId, recurrenceId, txTitle, txDate) {
+    
+    // 1. SE NÃO FOR RECORRENTE (Lógica simples de sempre)
+    if (!recurrenceId) {
+        if (await showConfirmModal('Excluir Transação?', `Tem certeza que deseja excluir "${txTitle}"?`)) {
+            try {
+                await deleteDoc(getAgencyTransactionDoc(txId));
+            } catch (error) {
+                console.error("Erro ao deletar transação:", error);
+                showModal("Erro", "Não foi possível excluir a transação.");
+            }
+        }
+        return; // Termina aqui
+    }
+
+    // 2. SE FOR RECORRENTE (Lógica nova com botões customizados)
+    
+    // Formata a data para "Nov/2025"
+    const date = new Date(txDate + 'T12:00:00');
+    const monthYear = date.toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' });
+
+    // Classes de estilo para os botões (Tailwind)
+const btnCompact = "w-full md:w-auto py-2 px-4 rounded-md font-medium text-sm transition-colors duration-150";
+const btnSecondary = `${btnCompact} bg-zinc-600 hover:bg-zinc-500 text-white`;
+const btnDanger = `${btnCompact} bg-red-600 hover:bg-red-700 text-white`;
+const btnPrimary = `${btnCompact} bg-blue-600 hover:bg-blue-700 text-white`;
+
+    const result = await showCustomConfirmModal(
+        "Excluir Despesa Recorrente",
+        `"${txTitle}" é uma despesa fixa. O que você deseja fazer?`,
+        [
+            // Botão 1: Apagar este mês
+            { 
+                text: `Apagar somente este mês (${monthYear})`, 
+                value: 'one', 
+                class: btnSecondary
+            },
+            // Botão 2: Apagar todos
+            { 
+                text: "Apagar TODAS as instâncias", 
+                value: 'all', 
+                class: btnDanger
+            },
+            // Botão 3: Cancelar
+            { 
+                text: "Cancelar", 
+                value: 'cancel', 
+                class: btnPrimary 
+            }
+        ]
+    );
+
+    // 3. Processa o resultado da escolha
+    switch (result) {
+        case 'one':
+            // Apaga apenas esta instância
+            try {
+                await deleteDoc(getAgencyTransactionDoc(txId));
+                showModal("Sucesso", "Apenas esta instância foi excluída.");
+            } catch (error) {
+                console.error("Erro ao deletar transação:", error);
+                showModal("Erro", "Não foi possível excluir a transação.");
+            }
+            break;
+            
+        case 'all':
+            // Apaga todas as instâncias pelo recurrenceId
+            try {
+                // (Esta função deleteAllByRecurrenceId já deve existir da nossa etapa anterior)
+                await deleteAllByRecurrenceId(recurrenceId);
+                showModal("Sucesso", "Todas as instâncias recorrentes foram excluídas.");
+            } catch (error) {
+                console.error("Erro ao deletar todas as transações:", error);
+                showModal("Erro", "Não foi possível excluir todas as transações.");
+            }
+            break;
+
+        case 'cancel':
+        default:
+            // Não faz nada
+            break;
+    }
+}
+
+/**
+ * 💡 NOVA: Função helper para buscar e excluir em lote por ID de recorrência.
+ */
+async function deleteAllByRecurrenceId(recurrenceId) {
+    if (!recurrenceId) return;
+    
+    const batch = writeBatch(db);
+    
+    // 1. Busca todos os documentos com esse ID de recorrência
+    const q = query(getAgencyTransactionsCollection(), where("recurrenceId", "==", recurrenceId));
+    const querySnapshot = await getDocs(q); // 💡 OPA! getDocs não está importado
+    
+    if (querySnapshot.empty) {
+        console.warn("Nenhuma transação encontrada para o recurrenceId:", recurrenceId);
+        return;
+    }
+    
+    // 2. Adiciona todos ao lote de exclusão
+    querySnapshot.forEach((doc) => {
+        batch.delete(doc.ref);
+    });
+    
+    // 3. Executa a exclusão
+    await batch.commit();
+}
+
+function renderAccountsReceivableTable(pendingTransactions) {
+    const tableBody = document.getElementById('finance-receivable-body');
+    if (!tableBody) return;
+    
+    // Pega o container principal da tabela de pendências
+    const tableContainer = tableBody.closest('.bg-zinc-800');
+
+    tableBody.innerHTML = ''; // Limpa a tabela
+    let totalPendente = 0;
+
+    if (pendingTransactions.length === 0) {
+        tableBody.innerHTML = `<tr><td colspan="6" class="p-8 text-center text-zinc-400">
+            <div class="flex flex-col items-center justify-center">
+                <i data-lucide="party-popper" class="w-10 h-10 mx-auto mb-3 text-green-500"></i>
+                <p class="font-semibold text-lg text-white">Tudo em dia!</p>
+                <p class="text-sm">Nenhuma pendência de pagamento encontrada.</p>
+            </div>
+        </td></tr>`;
+        if (typeof lucide !== 'undefined') lucide.createIcons();
+    } else {
+        // ... (todo o seu 'forEach' para renderizar as linhas da tabela permanece o mesmo) ...
+        const paymentStatusLabels = { 'pending_100': 'Pendente (100%)', 'pending_50': 'Pendente (50%)', 'paid_50': 'Pago (50%)' };
+        const statusColors = { 'pending_100': 'text-red-400', 'pending_50': 'text-red-400', 'paid_50': 'text-yellow-400' };
+
+        pendingTransactions.forEach(tx => {
+            // Calcula o total pendente ENQUANTO renderiza
+            const value = parseFloat(tx.value) || 0;
+            if (tx.paymentStatus === 'pending_100') totalPendente += value;
+            else if (tx.paymentStatus === 'pending_50' || tx.paymentStatus === 'paid_50') totalPendente += (value / 2);
+            
+            const tr = document.createElement('tr');
+            tr.className = 'hover:bg-zinc-700';
+
+            const client = tx.clientId ? allAgencyClients.find(c => c.id === tx.clientId) : null;
+            const txDate = tx.date ? new Date(tx.date + 'T12:00:00').toLocaleDateString('pt-BR') : 'N/A';
+            const paymentStatus = tx.paymentStatus || 'pending_100';
+
+            tr.innerHTML = `
+                <td class="p-4 font-medium">${client ? client.name : 'Cliente Avulso'}</td>
+                <td class="p-4 text-zinc-400">${tx.title}</td>
+                <td class="p-4 text-zinc-400">${txDate}</td>
+                <td class="p-4 font-semibold ${statusColors[paymentStatus] || 'text-zinc-400'}">
+                    ${paymentStatusLabels[paymentStatus] || paymentStatus}
+                </td>
+                <td class="p-4 font-medium text-green-400">R$ ${value.toFixed(2)}</td>
+                <td class="p-4 text-right whitespace-nowrap">
+                    <button data-edit-tx-id="${tx.id}" class="py-2 px-3 bg-blue-500 hover:bg-blue-600 rounded-md font-semibold text-xs transition-colors">
+                        Atualizar Status
+                    </button>
+                </td>
+            `;
+            tr.querySelector(`[data-edit-tx-id="${tx.id}"]`).addEventListener('click', () => showAddTransactionForm(tx.id));
+            tableBody.appendChild(tr);
+        });
+        if (typeof lucide !== 'undefined') lucide.createIcons();
+    }
+
+    // 💡 ATUALIZA HEADER E FOOTER
+    const formatBRL = (val) => val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+    
+    // Atualiza o contador no header
+    tableContainer.querySelector('span[class*="text-yellow-400 text-sm bg-yellow-500/10"]').textContent = `${pendingTransactions.length} itens`;
+    
+    // Atualiza o total no footer
+    tableContainer.querySelector('.bg-zinc-700\\/30 span[class*="text-yellow-400 font-semibold"]').textContent = formatBRL(totalPendente);
+}
